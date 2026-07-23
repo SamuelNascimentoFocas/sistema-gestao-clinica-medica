@@ -5,6 +5,7 @@ const SessionsController = () => import('#controllers/sessions_controller')
 const ClinicsController = () => import('#controllers/clinics_controller')
 const UsersController = () => import('#controllers/users_controller')
 const ClinicMembershipsController = () => import('#controllers/clinic_memberships_controller')
+const ClinicContextsController = () => import('#controllers/clinic_contexts_controller')
 
 router.get('/', async () => {
   return {
@@ -95,3 +96,31 @@ router
     })
   )
   .use(middleware.globalAdmin())
+
+router
+  .get('/api/v1/clinics/:clinicId/context', [ClinicContextsController, 'show'])
+  .where('clinicId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+  .use(
+    middleware.clinicPermission({
+      permissions: ['clinics.read'],
+    })
+  )
+
+router
+  .get('/api/v1/clinics/:clinicId/members', [ClinicContextsController, 'members'])
+  .where('clinicId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+  .use(
+    middleware.clinicPermission({
+      permissions: ['users.read'],
+    })
+  )

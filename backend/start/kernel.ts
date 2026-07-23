@@ -42,6 +42,7 @@ router.use([
  * the routes or the routes group.
  */
 export const middleware = router.named({
+  clinicPermission: () => import('#middleware/clinic_permission_middleware'),
   globalAdmin: () => import('#middleware/global_admin_middleware'),
   auth: () => import('#middleware/auth_middleware'),
 })
