@@ -3,6 +3,7 @@ import { middleware } from '#start/kernel'
 
 const SessionsController = () => import('#controllers/sessions_controller')
 const ClinicsController = () => import('#controllers/clinics_controller')
+const UsersController = () => import('#controllers/users_controller')
 
 router.get('/', async () => {
   return {
@@ -43,6 +44,27 @@ router
       .where('id', router.matchers.uuid())
   })
   .prefix('/api/v1/clinics')
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+  .use(middleware.globalAdmin())
+
+router
+  .group(() => {
+    router.get('/', [UsersController, 'index'])
+    router.post('/', [UsersController, 'store'])
+
+    router.get('/:id', [UsersController, 'show']).where('id', router.matchers.uuid())
+
+    router.patch('/:id', [UsersController, 'update']).where('id', router.matchers.uuid())
+
+    router
+      .patch('/:id/status', [UsersController, 'updateStatus'])
+      .where('id', router.matchers.uuid())
+  })
+  .prefix('/api/v1/users')
   .use(
     middleware.auth({
       guards: ['api'],
