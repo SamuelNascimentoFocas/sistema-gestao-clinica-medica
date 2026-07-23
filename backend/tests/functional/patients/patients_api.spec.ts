@@ -70,9 +70,7 @@ test.group('Patients API', (group) => {
     }
   })
 
-  test('requires authentication and clinic permissions', async ({
-    client,
-  }) => {
+  test('requires authentication and clinic permissions', async ({ client }) => {
     const clinic = await createClinic('Clínica Protegida')
 
     const unauthenticatedResponse = await client
@@ -116,9 +114,7 @@ test.group('Patients API', (group) => {
   }) => {
     const firstClinic = await createClinic('Primeira Clínica')
     const secondClinic = await createClinic('Segunda Clínica')
-    const receptionist = await createUser(
-      'patient.receptionist@example.com'
-    )
+    const receptionist = await createUser('patient.receptionist@example.com')
 
     await createMembership({
       user: receptionist,
@@ -172,10 +168,7 @@ test.group('Patients API', (group) => {
     const secondLink = secondResponse.body().patientLink
 
     assert.equal(secondLink.patient.id, firstLink.patient.id)
-    assert.equal(
-      secondLink.patient.medicalRecord.id,
-      firstLink.patient.medicalRecord.id
-    )
+    assert.equal(secondLink.patient.medicalRecord.id, firstLink.patient.medicalRecord.id)
 
     const patients = await Patient.all()
     const links = await PatientClinic.all()
@@ -186,9 +179,7 @@ test.group('Patients API', (group) => {
     assert.lengthOf(records, 1)
 
     const listResponse = await client
-      .get(
-        `/api/v1/clinics/${firstClinic.id}/patients?search=Compartilhado`
-      )
+      .get(`/api/v1/clinics/${firstClinic.id}/patients?search=Compartilhado`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
 
@@ -196,23 +187,16 @@ test.group('Patients API', (group) => {
     assert.lengthOf(listResponse.body().data, 1)
 
     const showResponse = await client
-      .get(
-        `/api/v1/clinics/${firstClinic.id}/patients/${firstLink.patient.id}`
-      )
+      .get(`/api/v1/clinics/${firstClinic.id}/patients/${firstLink.patient.id}`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
 
     showResponse.assertStatus(200)
   })
 
-  test('updates patient data and the local clinic link status', async ({
-    client,
-    assert,
-  }) => {
+  test('updates patient data and the local clinic link status', async ({ client, assert }) => {
     const clinic = await createClinic('Clínica de Atualização')
-    const receptionist = await createUser(
-      'patient.update@example.com'
-    )
+    const receptionist = await createUser('patient.update@example.com')
 
     await createMembership({
       user: receptionist,
@@ -238,9 +222,7 @@ test.group('Patients API', (group) => {
     const patientId = createResponse.body().patientLink.patient.id
 
     const updateResponse = await client
-      .patch(
-        `/api/v1/clinics/${clinic.id}/patients/${patientId}`
-      )
+      .patch(`/api/v1/clinics/${clinic.id}/patients/${patientId}`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
@@ -260,9 +242,7 @@ test.group('Patients API', (group) => {
     assert.equal(updatedLink.localRecordNumber, 'NOVO-001')
 
     const statusResponse = await client
-      .patch(
-        `/api/v1/clinics/${clinic.id}/patients/${patientId}/status`
-      )
+      .patch(`/api/v1/clinics/${clinic.id}/patients/${patientId}/status`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
@@ -273,14 +253,10 @@ test.group('Patients API', (group) => {
     assert.isFalse(statusResponse.body().patientLink.isActive)
   })
 
-  test('rejects duplicate links, conflicting identity and invalid data', async ({
-    client,
-  }) => {
+  test('rejects duplicate links, conflicting identity and invalid data', async ({ client }) => {
     const firstClinic = await createClinic('Clínica de Validação 1')
     const secondClinic = await createClinic('Clínica de Validação 2')
-    const receptionist = await createUser(
-      'patient.validation@example.com'
-    )
+    const receptionist = await createUser('patient.validation@example.com')
 
     await createMembership({
       user: receptionist,
