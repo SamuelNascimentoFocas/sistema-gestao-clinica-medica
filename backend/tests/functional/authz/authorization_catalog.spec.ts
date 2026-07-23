@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import testUtils from '@adonisjs/core/services/test_utils'
+import db from '@adonisjs/lucid/services/db'
 import User from '#models/user'
 import Clinic from '#models/clinic'
 import Permission from '#models/permission'
@@ -10,8 +10,28 @@ import {
   seedAuthorizationCatalog,
 } from '../../../database/seeders/authorization_catalog_seeder.js'
 
+async function truncateClinicSchemaTables() {
+  await db.rawQuery(`
+    TRUNCATE TABLE
+      clinic.auth_access_tokens,
+      clinic.user_clinic_roles,
+      clinic.role_permissions,
+      clinic.permissions,
+      clinic.roles,
+      clinic.clinics,
+      clinic.users
+    RESTART IDENTITY CASCADE
+  `)
+}
+
 test.group('Authorization catalog', (group) => {
-  group.each.setup(() => testUtils.db().truncate())
+  group.each.setup(async () => {
+    await truncateClinicSchemaTables()
+
+    return async () => {
+      await truncateClinicSchemaTables()
+    }
+  })
 
   test('seeds roles and permissions idempotently', async ({ assert }) => {
     await seedAuthorizationCatalog()
@@ -81,7 +101,7 @@ test.group('Authorization catalog', (group) => {
 
     const clinic = await Clinic.create({
       name: 'Clínica Modelo',
-      cnpj: '12345678000195',
+      cnpj: null,
       phone: null,
       addressStreet: null,
       addressNumber: null,
