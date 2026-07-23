@@ -1,5 +1,5 @@
 import { test } from '@japa/runner'
-import db from '@adonisjs/lucid/services/db'
+import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import User from '#models/user'
 import Clinic from '#models/clinic'
 import Permission from '#models/permission'
@@ -9,20 +9,6 @@ import {
   PERMISSIONS,
   seedAuthorizationCatalog,
 } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-async function truncateClinicSchemaTables() {
-  await db.rawQuery(`
-    TRUNCATE TABLE
-      clinic.auth_access_tokens,
-      clinic.user_clinic_roles,
-      clinic.role_permissions,
-      clinic.permissions,
-      clinic.roles,
-      clinic.clinics,
-      clinic.users
-    RESTART IDENTITY CASCADE
-  `)
-}
 
 test.group('Authorization catalog', (group) => {
   group.each.setup(async () => {
