@@ -1,23 +1,29 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, hasMany } from '@adonisjs/lucid/orm'
-import type { HasMany } from '@adonisjs/lucid/types/relations'
-import UserClinicRole from '#models/user_clinic_role'
+import { BaseModel, column, hasMany, hasOne } from '@adonisjs/lucid/orm'
+import type { HasMany, HasOne } from '@adonisjs/lucid/types/relations'
 import PatientClinic from '#models/patient_clinic'
+import MedicalRecord from '#models/medical_record'
 
-export default class Clinic extends BaseModel {
-  static table = 'clinic.clinics'
+export default class Patient extends BaseModel {
+  static table = 'clinic.patients'
 
   @column({ isPrimary: true })
   declare id: string
 
-  @column()
-  declare name: string
+  @column({ columnName: 'full_name' })
+  declare fullName: string
+
+  @column.date({ columnName: 'birth_date' })
+  declare birthDate: DateTime
 
   @column()
-  declare cnpj: string | null
+  declare cpf: string | null
 
   @column()
   declare phone: string | null
+
+  @column()
+  declare email: string | null
 
   @column({ columnName: 'address_street' })
   declare addressStreet: string | null
@@ -53,13 +59,13 @@ export default class Clinic extends BaseModel {
   })
   declare updatedAt: DateTime
 
-  @hasMany(() => UserClinicRole, {
-    foreignKey: 'clinicId',
-  })
-  declare userRoles: HasMany<typeof UserClinicRole>
-
   @hasMany(() => PatientClinic, {
-    foreignKey: 'clinicId',
+    foreignKey: 'patientId',
   })
-  declare patientLinks: HasMany<typeof PatientClinic>
+  declare clinicLinks: HasMany<typeof PatientClinic>
+
+  @hasOne(() => MedicalRecord, {
+    foreignKey: 'patientId',
+  })
+  declare medicalRecord: HasOne<typeof MedicalRecord>
 }
