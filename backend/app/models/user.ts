@@ -1,11 +1,12 @@
 import { DateTime } from 'luxon'
 import hash from '@adonisjs/core/services/hash'
 import { compose } from '@adonisjs/core/helpers'
-import { BaseModel, column, hasMany } from '@adonisjs/lucid/orm'
-import type { HasMany } from '@adonisjs/lucid/types/relations'
+import { BaseModel, column, hasMany, hasOne } from '@adonisjs/lucid/orm'
+import type { HasMany, HasOne } from '@adonisjs/lucid/types/relations'
 import { withAuthFinder } from '@adonisjs/auth/mixins/lucid'
 import { DbAccessTokensProvider, type AccessToken } from '@adonisjs/auth/access_tokens'
 import UserClinicRole from '#models/user_clinic_role'
+import Professional from '#models/professional'
 
 const AuthFinder = withAuthFinder(() => hash.use('bcrypt'), {
   uids: ['emailNormalized'],
@@ -63,4 +64,9 @@ export default class User extends compose(BaseModel, AuthFinder) {
     expiresIn: '8 hours',
     tokenSecretLength: 40,
   })
+
+  @hasOne(() => Professional, {
+    foreignKey: 'userId',
+  })
+  declare professionalProfile: HasOne<typeof Professional>
 }
