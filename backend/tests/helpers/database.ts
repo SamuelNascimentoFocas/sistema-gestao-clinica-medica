@@ -8,6 +8,9 @@ export async function truncateClinicSchemaTables() {
       clinic.role_permissions,
       clinic.permissions,
       clinic.roles,
+      clinic.medical_records,
+      clinic.patient_clinics,
+      clinic.patients,
       clinic.clinics,
       clinic.users
     RESTART IDENTITY CASCADE
