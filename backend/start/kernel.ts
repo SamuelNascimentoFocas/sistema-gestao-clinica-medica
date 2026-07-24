@@ -46,4 +46,5 @@ export const middleware = router.named({
   globalAdmin: () => import('#middleware/global_admin_middleware'),
   clinicPermission: () => import('#middleware/clinic_permission_middleware'),
   scheduleManagement: () => import('#middleware/schedule_management_middleware'),
+  appointmentManagement: () => import('#middleware/appointment_management_middleware'),
 })
