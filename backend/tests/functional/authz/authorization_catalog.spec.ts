@@ -53,6 +53,10 @@ test.group('Authorization catalog', (group) => {
     assert.notInclude(receptionistPermissions, 'medical_records.read')
     assert.notInclude(receptionistPermissions, 'schedules.manage')
     assert.notInclude(receptionistPermissions, 'schedules.manage_own')
+
+    assert.include(receptionistPermissions, 'appointments.change_status')
+    assert.notInclude(receptionistPermissions, 'appointments.change_status_own')
+
     assert.notInclude(receptionistPermissions, 'users.assign_role')
 
     const doctor = await Role.query().where('code', 'doctor').preload('permissions').firstOrFail()
@@ -63,6 +67,10 @@ test.group('Authorization catalog', (group) => {
     assert.include(doctorPermissions, 'attachments.upload')
     assert.include(doctorPermissions, 'schedules.manage_own')
     assert.notInclude(doctorPermissions, 'schedules.manage')
+
+    assert.include(doctorPermissions, 'appointments.change_status_own')
+    assert.notInclude(doctorPermissions, 'appointments.change_status')
+
     assert.notInclude(doctorPermissions, 'users.assign_role')
 
     const clinicRead = await Permission.query()

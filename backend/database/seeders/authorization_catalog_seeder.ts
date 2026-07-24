@@ -96,6 +96,10 @@ export const PERMISSIONS = [
     code: 'appointments.change_status',
     description: 'Alterar o status de agendamentos',
   },
+  {
+    code: 'appointments.change_status_own',
+    description: 'Alterar o status dos agendamentos do próprio profissional',
+  },
 
   {
     code: 'medical_records.read',
@@ -145,7 +149,7 @@ const DOCTOR_PERMISSIONS = [
   'schedules.read',
   'schedules.manage_own',
   'appointments.read',
-  'appointments.change_status',
+  'appointments.change_status_own',
   'medical_records.read',
   'medical_records.create',
   'medical_records.correct',
