@@ -7,6 +7,7 @@ const UsersController = () => import('#controllers/users_controller')
 const ClinicMembershipsController = () => import('#controllers/clinic_memberships_controller')
 const ClinicContextsController = () => import('#controllers/clinic_contexts_controller')
 const PatientsController = () => import('#controllers/patients_controller')
+const ProfessionalsController = () => import('#controllers/professionals_controller')
 
 router.get('/', async () => {
   return {
@@ -161,6 +162,47 @@ router
   .prefix('/api/v1/clinics/:clinicId/patients')
   .where('clinicId', router.matchers.uuid())
   .where('patientId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+
+router
+  .group(() => {
+    router.get('/', [ProfessionalsController, 'index']).use(
+      middleware.clinicPermission({
+        permissions: ['professionals.read'],
+      })
+    )
+
+    router.post('/', [ProfessionalsController, 'store']).use(
+      middleware.clinicPermission({
+        permissions: ['professionals.create'],
+      })
+    )
+
+    router.get('/:professionalId', [ProfessionalsController, 'show']).use(
+      middleware.clinicPermission({
+        permissions: ['professionals.read'],
+      })
+    )
+
+    router.patch('/:professionalId', [ProfessionalsController, 'update']).use(
+      middleware.clinicPermission({
+        permissions: ['professionals.update'],
+      })
+    )
+
+    router.patch('/:professionalId/status', [ProfessionalsController, 'updateStatus']).use(
+      middleware.clinicPermission({
+        permissions: ['professionals.update'],
+      })
+    )
+  })
+  .prefix('/api/v1/clinics/:clinicId/professionals')
+  .where('clinicId', router.matchers.uuid())
+  .where('professionalId', router.matchers.uuid())
   .use(
     middleware.auth({
       guards: ['api'],
