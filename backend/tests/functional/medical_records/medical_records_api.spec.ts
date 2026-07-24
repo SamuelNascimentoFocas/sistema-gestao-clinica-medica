@@ -13,6 +13,7 @@ import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
+import Appointment from '#models/appointment'
 
 async function createUser(email: string) {
   return User.create({
@@ -165,6 +166,48 @@ async function createEntry({
     entryTypeCode,
     content,
     correctsEntryId: null,
+  })
+}
+
+async function createAppointment({
+  clinic,
+  patientLink,
+  professionalLink,
+  author,
+  startsAt,
+  status = 'scheduled',
+}: {
+  clinic: Clinic
+  patientLink: PatientClinic
+  professionalLink: ClinicProfessional
+  author: User
+  startsAt: DateTime
+  status?: 'scheduled' | 'cancelled'
+}) {
+  const isCancelled = status === 'cancelled'
+
+  return Appointment.create({
+    clinicId: clinic.id,
+    patientClinicId: patientLink.id,
+    clinicProfessionalId: professionalLink.id,
+    startsAt,
+    endsAt: startsAt.plus({ hours: 1 }),
+    status,
+    version: 1,
+    appointmentTypeCode: null,
+    administrativeNote: null,
+    createdByUserId: author.id,
+    confirmedAt: null,
+    confirmedByUserId: null,
+    completedAt: null,
+    completedByUserId: null,
+    cancelledAt: isCancelled ? DateTime.utc() : null,
+    cancelledByUserId: isCancelled ? author.id : null,
+    cancellationReasonCode: isCancelled ? 'patient_request' : null,
+    cancellationNote: null,
+    noShowAt: null,
+    noShowByUserId: null,
+    rescheduledFromAppointmentId: null,
   })
 }
 
@@ -577,5 +620,500 @@ test.group('Medical records API', (group) => {
     logs = await MedicalRecordAccessLog.query().where('medical_record_id', medicalRecord.id)
 
     assert.lengthOf(logs, 1)
+  })
+
+  test('creates a clinical entry with derived authorship and a compatible appointment', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await createClinic('Clínica de Escrita Clínica')
+    const doctor = await createUser('records.write.doctor@example.com')
+
+    await createMembership({
+      user: doctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Escrita Clínica')
+
+    const patientLink = await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dra. Escrita Clínica',
+      crmNumber: '98201',
+    })
+
+    const appointment = await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 10 }),
+    })
+
+    const token = await createToken(doctor)
+
+    const response = await client
+      .post(`/api/v1/clinics/${clinic.id}/patients/${patient.id}/medical-record/entries`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        appointmentId: appointment.id,
+        entryTypeCode: 'consultation',
+        content: 'Consulta clínica registrada pelo médico autenticado.',
+        authorUserId: '00000000-0000-0000-0000-000000000000',
+        clinicProfessionalId: '00000000-0000-0000-0000-000000000000',
+      })
+
+    response.assertStatus(201)
+
+    const responseEntry = response.body().entry
+
+    assert.equal(responseEntry.medicalRecordId, medicalRecord.id)
+    assert.equal(responseEntry.patientId, patient.id)
+    assert.equal(responseEntry.clinicId, clinic.id)
+    assert.equal(responseEntry.patientClinicId, patientLink.id)
+    assert.equal(responseEntry.clinicProfessionalId, professionalLink.id)
+    assert.equal(responseEntry.authorUserId, doctor.id)
+    assert.equal(responseEntry.appointmentId, appointment.id)
+    assert.equal(responseEntry.entryTypeCode, 'consultation')
+    assert.isNull(responseEntry.correctsEntryId)
+
+    const persistedEntry = await MedicalRecordEntry.findOrFail(responseEntry.id)
+
+    assert.equal(persistedEntry.authorUserId, doctor.id)
+    assert.equal(persistedEntry.clinicProfessionalId, professionalLink.id)
+    assert.equal(persistedEntry.appointmentId, appointment.id)
+
+    const entries = await MedicalRecordEntry.query().where('medical_record_id', medicalRecord.id)
+
+    assert.lengthOf(entries, 1)
+  })
+
+  test('requires both clinical permission and an active professional profile', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await createClinic('Clínica de Autoria Profissional')
+
+    const receptionist = await createUser('records.write.receptionist@example.com')
+
+    const administrator = await createUser('records.write.administrator@example.com')
+
+    await createMembership({
+      user: receptionist,
+      clinic,
+      roleCode: 'receptionist',
+    })
+
+    await createMembership({
+      user: administrator,
+      clinic,
+      roleCode: 'clinic_admin',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Autoria Profissional')
+
+    await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const route = `/api/v1/clinics/${clinic.id}/patients/${patient.id}` + '/medical-record/entries'
+
+    const receptionistToken = await createToken(receptionist)
+
+    const receptionistResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${receptionistToken}`)
+      .json({
+        entryTypeCode: 'evolution',
+        content: 'Tentativa administrativa indevida.',
+      })
+
+    receptionistResponse.assertStatus(403)
+
+    const administratorToken = await createToken(administrator)
+
+    const administratorResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${administratorToken}`)
+      .json({
+        entryTypeCode: 'evolution',
+        content: 'Tentativa sem perfil profissional clínico.',
+      })
+
+    administratorResponse.assertStatus(403)
+    administratorResponse.assertBodyContains({
+      message: 'O usuário não possui um perfil profissional clínico ativo neste consultório',
+    })
+
+    const entries = await MedicalRecordEntry.query().where('medical_record_id', medicalRecord.id)
+
+    assert.lengthOf(entries, 0)
+  })
+
+  test('validates clinical content and appointment compatibility', async ({ client, assert }) => {
+    const clinic = await createClinic('Clínica de Validação da Escrita')
+
+    const firstDoctor = await createUser('records.write.validation.first@example.com')
+
+    const secondDoctor = await createUser('records.write.validation.second@example.com')
+
+    await createMembership({
+      user: firstDoctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    await createMembership({
+      user: secondDoctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Validação da Escrita')
+
+    const patientLink = await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const firstProfessionalLink = await createProfessionalLink({
+      clinic,
+      user: firstDoctor,
+      fullName: 'Dr. Primeira Validação',
+      crmNumber: '98202',
+    })
+
+    const secondProfessionalLink = await createProfessionalLink({
+      clinic,
+      user: secondDoctor,
+      fullName: 'Dra. Segunda Validação',
+      crmNumber: '98203',
+    })
+
+    const cancelledAppointment = await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink: firstProfessionalLink,
+      author: firstDoctor,
+      startsAt: DateTime.utc().plus({ days: 12 }),
+      status: 'cancelled',
+    })
+
+    const otherDoctorAppointment = await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink: secondProfessionalLink,
+      author: secondDoctor,
+      startsAt: DateTime.utc().plus({ days: 13 }),
+    })
+
+    const token = await createToken(firstDoctor)
+
+    const route = `/api/v1/clinics/${clinic.id}/patients/${patient.id}` + '/medical-record/entries'
+
+    const blankContentResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        entryTypeCode: 'evolution',
+        content: '   ',
+      })
+
+    blankContentResponse.assertStatus(422)
+
+    const forbiddenTypeResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        entryTypeCode: 'correction',
+        content: 'Correção enviada pela rota incorreta.',
+      })
+
+    forbiddenTypeResponse.assertStatus(422)
+
+    const oversizedContentResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        entryTypeCode: 'evolution',
+        content: 'a'.repeat(20001),
+      })
+
+    oversizedContentResponse.assertStatus(422)
+
+    const cancelledAppointmentResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        appointmentId: cancelledAppointment.id,
+        entryTypeCode: 'consultation',
+        content: 'Entrada vinculada a consulta cancelada.',
+      })
+
+    cancelledAppointmentResponse.assertStatus(409)
+
+    const otherDoctorAppointmentResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        appointmentId: otherDoctorAppointment.id,
+        entryTypeCode: 'consultation',
+        content: 'Entrada vinculada ao agendamento de outro médico.',
+      })
+
+    otherDoctorAppointmentResponse.assertStatus(404)
+
+    const entries = await MedicalRecordEntry.query().where('medical_record_id', medicalRecord.id)
+
+    assert.lengthOf(entries, 0)
+  })
+
+  test('creates a linear correction chain and preserves the original entry', async ({
+    client,
+    assert,
+  }) => {
+    const firstClinic = await createClinic('Primeira Clínica de Correções')
+
+    const secondClinic = await createClinic('Segunda Clínica de Correções')
+
+    const firstDoctor = await createUser('records.correction.first@example.com')
+
+    const secondDoctor = await createUser('records.correction.second@example.com')
+
+    await createMembership({
+      user: firstDoctor,
+      clinic: firstClinic,
+      roleCode: 'doctor',
+    })
+
+    await createMembership({
+      user: secondDoctor,
+      clinic: secondClinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Correções Lineares')
+
+    const firstPatientLink = await createPatientLink({
+      patient,
+      clinic: firstClinic,
+    })
+
+    const secondPatientLink = await createPatientLink({
+      patient,
+      clinic: secondClinic,
+    })
+
+    const firstProfessionalLink = await createProfessionalLink({
+      clinic: firstClinic,
+      user: firstDoctor,
+      fullName: 'Dr. Primeiro Corretor',
+      crmNumber: '98204',
+    })
+
+    const secondProfessionalLink = await createProfessionalLink({
+      clinic: secondClinic,
+      user: secondDoctor,
+      fullName: 'Dra. Segunda Corretora',
+      crmNumber: '98205',
+    })
+
+    assert.equal(firstPatientLink.clinicId, firstClinic.id)
+    assert.equal(firstProfessionalLink.clinicId, firstClinic.id)
+
+    const originalEntry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic: secondClinic,
+      patientLink: secondPatientLink,
+      professionalLink: secondProfessionalLink,
+      author: secondDoctor,
+      content: 'Conteúdo clínico original.',
+    })
+
+    const firstToken = await createToken(firstDoctor)
+
+    const wrongClinicResponse = await client
+      .post(
+        `/api/v1/clinics/${firstClinic.id}/patients/${patient.id}` +
+          `/medical-record/entries/${originalEntry.id}/corrections`
+      )
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstToken}`)
+      .json({
+        content: 'Tentativa de corrigir por outro consultório.',
+      })
+
+    wrongClinicResponse.assertStatus(404)
+
+    const secondToken = await createToken(secondDoctor)
+
+    const firstCorrectionResponse = await client
+      .post(
+        `/api/v1/clinics/${secondClinic.id}/patients/${patient.id}` +
+          `/medical-record/entries/${originalEntry.id}/corrections`
+      )
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${secondToken}`)
+      .json({
+        content: 'Primeira correção clínica.',
+      })
+
+    firstCorrectionResponse.assertStatus(201)
+
+    const firstCorrection = firstCorrectionResponse.body().entry
+
+    assert.equal(firstCorrection.entryTypeCode, 'correction')
+    assert.equal(firstCorrection.correctsEntryId, originalEntry.id)
+    assert.equal(firstCorrection.authorUserId, secondDoctor.id)
+    assert.equal(firstCorrection.clinicProfessionalId, secondProfessionalLink.id)
+
+    const persistedOriginal = await MedicalRecordEntry.findOrFail(originalEntry.id)
+
+    assert.equal(persistedOriginal.content, 'Conteúdo clínico original.')
+    assert.equal(persistedOriginal.entryTypeCode, 'evolution')
+
+    const repeatedCorrectionResponse = await client
+      .post(
+        `/api/v1/clinics/${secondClinic.id}/patients/${patient.id}` +
+          `/medical-record/entries/${originalEntry.id}/corrections`
+      )
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${secondToken}`)
+      .json({
+        content: 'Segunda correção direta indevida.',
+      })
+
+    repeatedCorrectionResponse.assertStatus(409)
+
+    const correctionOfCorrectionResponse = await client
+      .post(
+        `/api/v1/clinics/${secondClinic.id}/patients/${patient.id}` +
+          `/medical-record/entries/${firstCorrection.id}/corrections`
+      )
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${secondToken}`)
+      .json({
+        content: 'Correção da versão corrigida.',
+      })
+
+    correctionOfCorrectionResponse.assertStatus(201)
+
+    const secondCorrection = correctionOfCorrectionResponse.body().entry
+
+    assert.equal(secondCorrection.correctsEntryId, firstCorrection.id)
+
+    const allEntries = await MedicalRecordEntry.query().where('medical_record_id', medicalRecord.id)
+
+    assert.lengthOf(allEntries, 3)
+
+    const originalSuccessors = await MedicalRecordEntry.query().where(
+      'corrects_entry_id',
+      originalEntry.id
+    )
+
+    const firstCorrectionSuccessors = await MedicalRecordEntry.query().where(
+      'corrects_entry_id',
+      firstCorrection.id
+    )
+
+    assert.lengthOf(originalSuccessors, 1)
+    assert.lengthOf(firstCorrectionSuccessors, 1)
+  })
+
+  test('allows only one correction when concurrent requests target the same entry', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await createClinic('Clínica de Correção Concorrente')
+
+    const doctor = await createUser('records.correction.concurrent@example.com')
+
+    await createMembership({
+      user: doctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Correção Concorrente')
+
+    const patientLink = await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Correção Concorrente',
+      crmNumber: '98206',
+    })
+
+    const originalEntry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      content: 'Entrada sujeita a correções concorrentes.',
+    })
+
+    const token = await createToken(doctor)
+
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+      `/medical-record/entries/${originalEntry.id}/corrections`
+
+    const [firstResponse, secondResponse] = await Promise.all([
+      client
+        .post(route)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+        .json({
+          content: 'Primeira tentativa concorrente.',
+        }),
+
+      client
+        .post(route)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+        .json({
+          content: 'Segunda tentativa concorrente.',
+        }),
+    ])
+
+    const statuses = [firstResponse.status(), secondResponse.status()].sort(
+      (first, second) => first - second
+    )
+
+    assert.deepEqual(statuses, [201, 409])
+
+    const corrections = await MedicalRecordEntry.query().where(
+      'corrects_entry_id',
+      originalEntry.id
+    )
+
+    assert.lengthOf(corrections, 1)
+
+    const persistedOriginal = await MedicalRecordEntry.findOrFail(originalEntry.id)
+
+    assert.equal(persistedOriginal.content, 'Entrada sujeita a correções concorrentes.')
   })
 })

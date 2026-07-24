@@ -1,10 +1,31 @@
 import type { HttpContext } from '@adonisjs/core/http'
+import type { TransactionClientContract } from '@adonisjs/lucid/types/database'
+import db from '@adonisjs/lucid/services/db'
 import PatientClinic from '#models/patient_clinic'
+import ClinicProfessional from '#models/clinic_professional'
+import Appointment from '#models/appointment'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAccessLog from '#models/medical_record_access_log'
-import { readMedicalRecordValidator } from '#validators/medical_record'
+import {
+  correctMedicalRecordEntryValidator,
+  createMedicalRecordEntryValidator,
+  readMedicalRecordValidator,
+} from '#validators/medical_record'
 
-type MedicalRecordRequestStatus = 404 | 409 | 422
+type MedicalRecordRequestStatus = 403 | 404 | 409 | 422
+
+type PostgreSqlError = {
+  code?: string
+  constraint?: string
+}
+
+function getPostgreSqlError(error: unknown) {
+  if (typeof error !== 'object' || error === null) {
+    return null
+  }
+
+  return error as PostgreSqlError
+}
 
 class MedicalRecordRequestError extends Error {
   constructor(
@@ -18,17 +39,28 @@ class MedicalRecordRequestError extends Error {
 async function loadPatientContext({
   clinicId,
   patientId,
+  client,
+  lock = false,
 }: {
   clinicId: string
   patientId: string
+  client?: TransactionClientContract
+  lock?: boolean
 }) {
-  const patientLink = await PatientClinic.query()
+  const query = client ? PatientClinic.query({ client }) : PatientClinic.query()
+
+  query
     .where('clinic_id', clinicId)
     .where('patient_id', patientId)
     .preload('patient', (patientQuery) => {
       patientQuery.preload('medicalRecord')
     })
-    .first()
+
+  if (lock) {
+    query.forUpdate()
+  }
+
+  const patientLink = await query.first()
 
   if (!patientLink) {
     throw new MedicalRecordRequestError(404, 'Paciente não encontrado neste consultório')
@@ -52,6 +84,79 @@ async function loadPatientContext({
     patient: patientLink.patient,
     medicalRecord,
   }
+}
+
+async function loadClinicalAuthor({
+  clinicId,
+  userId,
+  client,
+  lock = false,
+}: {
+  clinicId: string
+  userId: string
+  client?: TransactionClientContract
+  lock?: boolean
+}) {
+  const query = client ? ClinicProfessional.query({ client }) : ClinicProfessional.query()
+
+  query
+    .where('clinic_id', clinicId)
+    .where('is_active', true)
+    .whereHas('professional', (professionalQuery) => {
+      professionalQuery.where('user_id', userId).where('is_active', true)
+    })
+    .preload('professional')
+
+  if (lock) {
+    query.forUpdate()
+  }
+
+  const professionalLink = await query.first()
+
+  if (!professionalLink) {
+    throw new MedicalRecordRequestError(
+      403,
+      'O usuário não possui um perfil profissional clínico ativo neste consultório'
+    )
+  }
+
+  return professionalLink
+}
+
+async function loadMedicalRecordEntry({
+  medicalRecordId,
+  entryId,
+}: {
+  medicalRecordId: string
+  entryId: string
+}) {
+  return MedicalRecordEntry.query()
+    .where('medical_record_id', medicalRecordId)
+    .where('id', entryId)
+    .preload('clinic')
+    .preload('clinicProfessional', (professionalQuery) => {
+      professionalQuery.preload('professional')
+    })
+    .preload('appointment')
+    .preload('authorUser')
+    .preload('correctedEntry', (correctedEntryQuery) => {
+      correctedEntryQuery
+        .preload('authorUser')
+        .preload('clinic')
+        .preload('clinicProfessional', (professionalQuery) => {
+          professionalQuery.preload('professional')
+        })
+    })
+    .preload('corrections', (correctionQuery) => {
+      correctionQuery
+        .preload('authorUser')
+        .preload('clinic')
+        .preload('clinicProfessional', (professionalQuery) => {
+          professionalQuery.preload('professional')
+        })
+        .orderBy('created_at', 'asc')
+    })
+    .first()
 }
 
 function validateAccessPurpose({
@@ -108,6 +213,10 @@ function respondForMedicalRecordError({
   response: HttpContext['response']
 }) {
   switch (error.status) {
+    case 403:
+      return response.forbidden({
+        message: error.message,
+      })
     case 404:
       return response.notFound({
         message: error.message,
@@ -185,6 +294,8 @@ export default class MedicalRecordsController {
         purposeCode: filters.purposeCode,
         purposeNote: filters.purposeNote,
       })
+
+      response.header('Cache-Control', 'private, no-store')
 
       return response.ok({
         medicalRecord: medicalRecord.serialize(),
@@ -275,6 +386,8 @@ export default class MedicalRecordsController {
         purposeNote: filters.purposeNote,
       })
 
+      response.header('Cache-Control', 'private, no-store')
+
       return response.ok({
         entry: entry.serialize(),
       })
@@ -283,6 +396,218 @@ export default class MedicalRecordsController {
         return respondForMedicalRecordError({
           error,
           response,
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async storeEntry({ auth, clinicAuthorization, params, request, response }: HttpContext) {
+    if (!clinicAuthorization) {
+      return response.internalServerError({
+        message: 'Contexto de autorização não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const payload = await request.validateUsing(createMedicalRecordEntryValidator)
+
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const result = await db.transaction(async (trx) => {
+        const { patientLink, patient, medicalRecord } = await loadPatientContext({
+          clinicId,
+          patientId: params.patientId,
+          client: trx,
+          lock: true,
+        })
+
+        const professionalLink = await loadClinicalAuthor({
+          clinicId,
+          userId: user.id,
+          client: trx,
+          lock: true,
+        })
+
+        let appointmentId: string | null = null
+
+        if (payload.appointmentId) {
+          const appointment = await Appointment.query({
+            client: trx,
+          })
+            .where('clinic_id', clinicId)
+            .where('id', payload.appointmentId)
+            .where('patient_clinic_id', patientLink.id)
+            .where('clinic_professional_id', professionalLink.id)
+            .forUpdate()
+            .first()
+
+          if (!appointment) {
+            throw new MedicalRecordRequestError(
+              404,
+              'Agendamento compatível não encontrado neste consultório'
+            )
+          }
+
+          if (appointment.status === 'cancelled' || appointment.status === 'no_show') {
+            throw new MedicalRecordRequestError(
+              409,
+              'Agendamentos cancelados ou marcados como falta não podem receber entradas clínicas'
+            )
+          }
+
+          appointmentId = appointment.id
+        }
+
+        const entry = new MedicalRecordEntry()
+        entry.useTransaction(trx)
+
+        entry.merge({
+          medicalRecordId: medicalRecord.id,
+          patientId: patient.id,
+          clinicId,
+          patientClinicId: patientLink.id,
+          clinicProfessionalId: professionalLink.id,
+          appointmentId,
+          authorUserId: user.id,
+          entryTypeCode: payload.entryTypeCode,
+          content: payload.content,
+          correctsEntryId: null,
+        })
+
+        await entry.save()
+
+        return {
+          medicalRecordId: medicalRecord.id,
+          entryId: entry.id,
+        }
+      })
+
+      const entry = await loadMedicalRecordEntry(result)
+
+      response.header('Cache-Control', 'private, no-store')
+
+      return response.created({
+        entry: entry!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof MedicalRecordRequestError) {
+        return respondForMedicalRecordError({
+          error,
+          response,
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async correctEntry({ auth, clinicAuthorization, params, request, response }: HttpContext) {
+    if (!clinicAuthorization) {
+      return response.internalServerError({
+        message: 'Contexto de autorização não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const payload = await request.validateUsing(correctMedicalRecordEntryValidator)
+
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const result = await db.transaction(async (trx) => {
+        const { patientLink, patient, medicalRecord } = await loadPatientContext({
+          clinicId,
+          patientId: params.patientId,
+          client: trx,
+          lock: true,
+        })
+
+        const professionalLink = await loadClinicalAuthor({
+          clinicId,
+          userId: user.id,
+          client: trx,
+          lock: true,
+        })
+
+        const originalEntry = await MedicalRecordEntry.query({
+          client: trx,
+        })
+          .where('medical_record_id', medicalRecord.id)
+          .where('clinic_id', clinicId)
+          .where('id', params.entryId)
+          .forUpdate()
+          .first()
+
+        if (!originalEntry) {
+          throw new MedicalRecordRequestError(
+            404,
+            'Entrada do prontuário não encontrada neste consultório'
+          )
+        }
+
+        const existingCorrection = await MedicalRecordEntry.query({
+          client: trx,
+        })
+          .where('corrects_entry_id', originalEntry.id)
+          .first()
+
+        if (existingCorrection) {
+          throw new MedicalRecordRequestError(
+            409,
+            'Esta entrada já possui uma correção direta; atualize a timeline e corrija a entrada mais recente'
+          )
+        }
+
+        const correction = new MedicalRecordEntry()
+        correction.useTransaction(trx)
+
+        correction.merge({
+          medicalRecordId: medicalRecord.id,
+          patientId: patient.id,
+          clinicId,
+          patientClinicId: patientLink.id,
+          clinicProfessionalId: professionalLink.id,
+          appointmentId: null,
+          authorUserId: user.id,
+          entryTypeCode: 'correction',
+          content: payload.content,
+          correctsEntryId: originalEntry.id,
+        })
+
+        await correction.save()
+
+        return {
+          medicalRecordId: medicalRecord.id,
+          entryId: correction.id,
+        }
+      })
+
+      const entry = await loadMedicalRecordEntry(result)
+
+      response.header('Cache-Control', 'private, no-store')
+
+      return response.created({
+        entry: entry!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof MedicalRecordRequestError) {
+        return respondForMedicalRecordError({
+          error,
+          response,
+        })
+      }
+
+      const databaseError = getPostgreSqlError(error)
+
+      if (
+        databaseError?.code === '23505' &&
+        databaseError.constraint === 'medical_record_entries_corrects_entry_unique'
+      ) {
+        return response.conflict({
+          message: 'Esta entrada já foi corrigida por outra operação; atualize a timeline',
         })
       }
 

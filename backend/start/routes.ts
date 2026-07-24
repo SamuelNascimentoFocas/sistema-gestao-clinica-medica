@@ -180,9 +180,21 @@ router
       })
     )
 
+    router.post('/entries', [MedicalRecordsController, 'storeEntry']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'medical_records.create'],
+      })
+    )
+
     router.get('/entries/:entryId', [MedicalRecordsController, 'showEntry']).use(
       middleware.clinicPermission({
         permissions: ['patients.read', 'medical_records.read'],
+      })
+    )
+
+    router.post('/entries/:entryId/corrections', [MedicalRecordsController, 'correctEntry']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'medical_records.correct'],
       })
     )
   })
