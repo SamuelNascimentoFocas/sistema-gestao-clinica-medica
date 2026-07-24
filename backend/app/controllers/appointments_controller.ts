@@ -7,8 +7,11 @@ import ClinicProfessional from '#models/clinic_professional'
 import ProfessionalScheduleBlock from '#models/professional_schedule_block'
 import ProfessionalWeeklyAvailability from '#models/professional_weekly_availability'
 import {
+  appointmentVersionValidator,
+  cancelAppointmentValidator,
   createAppointmentValidator,
   listAppointmentsValidator,
+  rescheduleAppointmentValidator,
   updateAppointmentValidator,
 } from '#validators/appointment'
 
@@ -40,17 +43,11 @@ function getPostgreSqlError(error: unknown) {
 
 function hasMutableAppointmentField(payload: {
   patientClinicId?: string
-  clinicProfessionalId?: string
-  startsAt?: DateTime
-  durationMinutes?: number
   appointmentTypeCode?: string | null
   administrativeNote?: string | null
 }) {
   return (
     payload.patientClinicId !== undefined ||
-    payload.clinicProfessionalId !== undefined ||
-    payload.startsAt !== undefined ||
-    payload.durationMinutes !== undefined ||
     payload.appointmentTypeCode !== undefined ||
     payload.administrativeNote !== undefined
   )
@@ -560,9 +557,6 @@ export default class AppointmentsController {
 
         const patientClinicId = payload.patientClinicId ?? appointment.patientClinicId
 
-        const clinicProfessionalId =
-          payload.clinicProfessionalId ?? appointment.clinicProfessionalId
-
         if (payload.patientClinicId !== undefined) {
           await loadPatientLink({
             clinicId,
@@ -570,60 +564,10 @@ export default class AppointmentsController {
           })
         }
 
-        const targetProfessionalLink =
-          clinicProfessionalId === currentProfessionalLink.id
-            ? currentProfessionalLink
-            : await findProfessionalLink({
-                clinicId,
-                clinicProfessionalId,
-              })
-
-        assertProfessionalScope({
-          managementScope: appointmentManagementScope,
-          userId: user.id,
-          professionalLink: targetProfessionalLink,
-        })
-
-        const startsAt = payload.startsAt ?? appointment.startsAt
-
-        const currentDurationMinutes = Math.round(
-          appointment.endsAt.diff(appointment.startsAt, 'minutes').minutes
-        )
-
-        const durationMinutes = payload.durationMinutes ?? currentDurationMinutes
-
-        const endsAt = startsAt.plus({
-          minutes: durationMinutes,
-        })
-
-        const scheduleChanged =
-          payload.clinicProfessionalId !== undefined ||
-          payload.startsAt !== undefined ||
-          payload.durationMinutes !== undefined
-
-        if (scheduleChanged) {
-          await loadSchedulableProfessionalLink({
-            clinicId,
-            clinicProfessionalId,
-          })
-
-          await validateAppointmentSlot({
-            clinicId,
-            clinicTimezone: clinicAuthorization.clinic.timezone,
-            clinicProfessionalId,
-            startsAt,
-            endsAt,
-            excludeAppointmentId: appointment.id,
-          })
-        }
-
         appointment.useTransaction(trx)
 
         appointment.merge({
           patientClinicId,
-          clinicProfessionalId,
-          startsAt,
-          endsAt,
           appointmentTypeCode:
             payload.appointmentTypeCode !== undefined
               ? payload.appointmentTypeCode
@@ -644,6 +588,551 @@ export default class AppointmentsController {
       })
 
       return response.ok({
+        appointment: appointment!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof AppointmentRequestError) {
+        return throwResponseForAppointmentError({
+          error,
+          response,
+        })
+      }
+
+      const databaseError = getPostgreSqlError(error)
+
+      if (databaseError?.code === '23P01') {
+        return response.conflict({
+          message: 'O horário informado conflita com outro agendamento ativo',
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async confirm({
+    auth,
+    clinicAuthorization,
+    appointmentManagementScope,
+    params,
+    request,
+    response,
+  }: HttpContext) {
+    if (!clinicAuthorization || !appointmentManagementScope) {
+      return response.internalServerError({
+        message: 'Contexto de autorização de agendamento não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const { expectedVersion } = await request.validateUsing(appointmentVersionValidator)
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const appointmentId = await db.transaction(async (trx) => {
+        const appointment = await Appointment.query({ client: trx })
+          .where('clinic_id', clinicId)
+          .where('id', params.appointmentId)
+          .forUpdate()
+          .first()
+
+        if (!appointment) {
+          throw new AppointmentRequestError(404, 'Agendamento não encontrado neste consultório')
+        }
+
+        const professionalLink = await findProfessionalLink({
+          clinicId,
+          clinicProfessionalId: appointment.clinicProfessionalId,
+        })
+
+        assertProfessionalScope({
+          managementScope: appointmentManagementScope,
+          userId: user.id,
+          professionalLink,
+        })
+
+        if (appointment.status === 'confirmed') {
+          return appointment.id
+        }
+
+        if (appointment.version !== expectedVersion) {
+          throw new AppointmentRequestError(
+            409,
+            'O agendamento foi alterado por outro usuário; atualize os dados e tente novamente'
+          )
+        }
+
+        if (appointment.status !== 'scheduled') {
+          throw new AppointmentRequestError(
+            409,
+            'Somente um agendamento marcado pode ser confirmado'
+          )
+        }
+
+        appointment.useTransaction(trx)
+        appointment.status = 'confirmed'
+        appointment.confirmedAt = DateTime.utc()
+        appointment.confirmedByUserId = user.id
+        appointment.version += 1
+
+        await appointment.save()
+
+        return appointment.id
+      })
+
+      const appointment = await loadAppointment({
+        clinicId,
+        appointmentId,
+      })
+
+      return response.ok({
+        appointment: appointment!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof AppointmentRequestError) {
+        return throwResponseForAppointmentError({
+          error,
+          response,
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async cancel({
+    auth,
+    clinicAuthorization,
+    appointmentManagementScope,
+    params,
+    request,
+    response,
+  }: HttpContext) {
+    if (!clinicAuthorization || !appointmentManagementScope) {
+      return response.internalServerError({
+        message: 'Contexto de autorização de agendamento não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const payload = await request.validateUsing(cancelAppointmentValidator)
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const appointmentId = await db.transaction(async (trx) => {
+        const appointment = await Appointment.query({ client: trx })
+          .where('clinic_id', clinicId)
+          .where('id', params.appointmentId)
+          .forUpdate()
+          .first()
+
+        if (!appointment) {
+          throw new AppointmentRequestError(404, 'Agendamento não encontrado neste consultório')
+        }
+
+        const professionalLink = await findProfessionalLink({
+          clinicId,
+          clinicProfessionalId: appointment.clinicProfessionalId,
+        })
+
+        assertProfessionalScope({
+          managementScope: appointmentManagementScope,
+          userId: user.id,
+          professionalLink,
+        })
+
+        if (appointment.version !== payload.expectedVersion) {
+          throw new AppointmentRequestError(
+            409,
+            'O agendamento foi alterado por outro usuário; atualize os dados e tente novamente'
+          )
+        }
+
+        if (appointment.status !== 'scheduled' && appointment.status !== 'confirmed') {
+          throw new AppointmentRequestError(409, 'Somente agendamentos ativos podem ser cancelados')
+        }
+
+        appointment.useTransaction(trx)
+        appointment.status = 'cancelled'
+        appointment.cancelledAt = DateTime.utc()
+        appointment.cancelledByUserId = user.id
+        appointment.cancellationReasonCode = payload.cancellationReasonCode
+        appointment.cancellationNote = payload.cancellationNote ?? null
+        appointment.version += 1
+
+        await appointment.save()
+
+        return appointment.id
+      })
+
+      const appointment = await loadAppointment({
+        clinicId,
+        appointmentId,
+      })
+
+      return response.ok({
+        appointment: appointment!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof AppointmentRequestError) {
+        return throwResponseForAppointmentError({
+          error,
+          response,
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async complete({
+    auth,
+    clinicAuthorization,
+    appointmentManagementScope,
+    params,
+    request,
+    response,
+  }: HttpContext) {
+    if (!clinicAuthorization || !appointmentManagementScope) {
+      return response.internalServerError({
+        message: 'Contexto de autorização de agendamento não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const { expectedVersion } = await request.validateUsing(appointmentVersionValidator)
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const appointmentId = await db.transaction(async (trx) => {
+        const appointment = await Appointment.query({ client: trx })
+          .where('clinic_id', clinicId)
+          .where('id', params.appointmentId)
+          .forUpdate()
+          .first()
+
+        if (!appointment) {
+          throw new AppointmentRequestError(404, 'Agendamento não encontrado neste consultório')
+        }
+
+        const professionalLink = await findProfessionalLink({
+          clinicId,
+          clinicProfessionalId: appointment.clinicProfessionalId,
+        })
+
+        assertProfessionalScope({
+          managementScope: appointmentManagementScope,
+          userId: user.id,
+          professionalLink,
+        })
+
+        if (appointment.version !== expectedVersion) {
+          throw new AppointmentRequestError(
+            409,
+            'O agendamento foi alterado por outro usuário; atualize os dados e tente novamente'
+          )
+        }
+
+        if (appointment.status !== 'scheduled' && appointment.status !== 'confirmed') {
+          throw new AppointmentRequestError(
+            409,
+            'Somente agendamentos ativos podem ser marcados como realizados'
+          )
+        }
+
+        if (DateTime.utc().toMillis() < appointment.startsAt.toMillis()) {
+          throw new AppointmentRequestError(
+            409,
+            'O agendamento não pode ser marcado como realizado antes do horário de início'
+          )
+        }
+
+        appointment.useTransaction(trx)
+        appointment.status = 'completed'
+        appointment.completedAt = DateTime.utc()
+        appointment.completedByUserId = user.id
+        appointment.version += 1
+
+        await appointment.save()
+
+        return appointment.id
+      })
+
+      const appointment = await loadAppointment({
+        clinicId,
+        appointmentId,
+      })
+
+      return response.ok({
+        appointment: appointment!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof AppointmentRequestError) {
+        return throwResponseForAppointmentError({
+          error,
+          response,
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async markNoShow({
+    auth,
+    clinicAuthorization,
+    appointmentManagementScope,
+    params,
+    request,
+    response,
+  }: HttpContext) {
+    if (!clinicAuthorization || !appointmentManagementScope) {
+      return response.internalServerError({
+        message: 'Contexto de autorização de agendamento não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const { expectedVersion } = await request.validateUsing(appointmentVersionValidator)
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const appointmentId = await db.transaction(async (trx) => {
+        const appointment = await Appointment.query({ client: trx })
+          .where('clinic_id', clinicId)
+          .where('id', params.appointmentId)
+          .forUpdate()
+          .first()
+
+        if (!appointment) {
+          throw new AppointmentRequestError(404, 'Agendamento não encontrado neste consultório')
+        }
+
+        const professionalLink = await findProfessionalLink({
+          clinicId,
+          clinicProfessionalId: appointment.clinicProfessionalId,
+        })
+
+        assertProfessionalScope({
+          managementScope: appointmentManagementScope,
+          userId: user.id,
+          professionalLink,
+        })
+
+        if (appointment.version !== expectedVersion) {
+          throw new AppointmentRequestError(
+            409,
+            'O agendamento foi alterado por outro usuário; atualize os dados e tente novamente'
+          )
+        }
+
+        if (appointment.status !== 'scheduled' && appointment.status !== 'confirmed') {
+          throw new AppointmentRequestError(
+            409,
+            'Somente agendamentos ativos podem ser marcados como falta'
+          )
+        }
+
+        const noShowAllowedAt = appointment.startsAt.plus({
+          minutes: 15,
+        })
+
+        if (DateTime.utc().toMillis() < noShowAllowedAt.toMillis()) {
+          throw new AppointmentRequestError(
+            409,
+            'A falta somente pode ser registrada após 15 minutos do horário inicial'
+          )
+        }
+
+        appointment.useTransaction(trx)
+        appointment.status = 'no_show'
+        appointment.noShowAt = DateTime.utc()
+        appointment.noShowByUserId = user.id
+        appointment.version += 1
+
+        await appointment.save()
+
+        return appointment.id
+      })
+
+      const appointment = await loadAppointment({
+        clinicId,
+        appointmentId,
+      })
+
+      return response.ok({
+        appointment: appointment!.serialize(),
+      })
+    } catch (error) {
+      if (error instanceof AppointmentRequestError) {
+        return throwResponseForAppointmentError({
+          error,
+          response,
+        })
+      }
+
+      throw error
+    }
+  }
+
+  async reschedule({
+    auth,
+    clinicAuthorization,
+    appointmentManagementScope,
+    params,
+    request,
+    response,
+  }: HttpContext) {
+    if (!clinicAuthorization || !appointmentManagementScope) {
+      return response.internalServerError({
+        message: 'Contexto de autorização de agendamento não inicializado',
+      })
+    }
+
+    const user = auth.getUserOrFail()
+    const payload = await request.validateUsing(rescheduleAppointmentValidator)
+    const clinicId = clinicAuthorization.clinic.id
+
+    try {
+      const newAppointmentId = await db.transaction(async (trx) => {
+        const previousAppointment = await Appointment.query({
+          client: trx,
+        })
+          .where('clinic_id', clinicId)
+          .where('id', params.appointmentId)
+          .forUpdate()
+          .first()
+
+        if (!previousAppointment) {
+          throw new AppointmentRequestError(404, 'Agendamento não encontrado neste consultório')
+        }
+
+        if (previousAppointment.version !== payload.expectedVersion) {
+          throw new AppointmentRequestError(
+            409,
+            'O agendamento foi alterado por outro usuário; atualize os dados e tente novamente'
+          )
+        }
+
+        if (
+          previousAppointment.status !== 'scheduled' &&
+          previousAppointment.status !== 'confirmed'
+        ) {
+          throw new AppointmentRequestError(
+            409,
+            'Somente agendamentos ativos podem ser reagendados'
+          )
+        }
+
+        const currentProfessionalLink = await findProfessionalLink({
+          clinicId,
+          clinicProfessionalId: previousAppointment.clinicProfessionalId,
+        })
+
+        assertProfessionalScope({
+          managementScope: appointmentManagementScope,
+          userId: user.id,
+          professionalLink: currentProfessionalLink,
+        })
+
+        await loadPatientLink({
+          clinicId,
+          patientClinicId: previousAppointment.patientClinicId,
+        })
+
+        const clinicProfessionalId =
+          payload.clinicProfessionalId ?? previousAppointment.clinicProfessionalId
+
+        const targetProfessionalLink = await loadSchedulableProfessionalLink({
+          clinicId,
+          clinicProfessionalId,
+        })
+
+        assertProfessionalScope({
+          managementScope: appointmentManagementScope,
+          userId: user.id,
+          professionalLink: targetProfessionalLink,
+        })
+
+        const currentDurationMinutes = Math.round(
+          previousAppointment.endsAt.diff(previousAppointment.startsAt, 'minutes').minutes
+        )
+
+        const durationMinutes = payload.durationMinutes ?? currentDurationMinutes
+
+        const scheduleChanged =
+          clinicProfessionalId !== previousAppointment.clinicProfessionalId ||
+          payload.startsAt.toMillis() !== previousAppointment.startsAt.toMillis() ||
+          durationMinutes !== currentDurationMinutes
+
+        if (!scheduleChanged) {
+          throw new AppointmentRequestError(
+            422,
+            'Informe um novo horário, duração ou profissional para o reagendamento'
+          )
+        }
+
+        const endsAt = payload.startsAt.plus({
+          minutes: durationMinutes,
+        })
+
+        await validateAppointmentSlot({
+          clinicId,
+          clinicTimezone: clinicAuthorization.clinic.timezone,
+          clinicProfessionalId,
+          startsAt: payload.startsAt,
+          endsAt,
+          excludeAppointmentId: previousAppointment.id,
+        })
+
+        previousAppointment.useTransaction(trx)
+        previousAppointment.status = 'cancelled'
+        previousAppointment.cancelledAt = DateTime.utc()
+        previousAppointment.cancelledByUserId = user.id
+        previousAppointment.cancellationReasonCode = 'rescheduled'
+        previousAppointment.cancellationNote = payload.cancellationNote ?? null
+        previousAppointment.version += 1
+
+        await previousAppointment.save()
+
+        const nextAppointment = new Appointment()
+        nextAppointment.useTransaction(trx)
+
+        nextAppointment.merge({
+          clinicId,
+          patientClinicId: previousAppointment.patientClinicId,
+          clinicProfessionalId,
+          startsAt: payload.startsAt,
+          endsAt,
+          status: 'scheduled',
+          version: 1,
+          appointmentTypeCode: previousAppointment.appointmentTypeCode,
+          administrativeNote: previousAppointment.administrativeNote,
+          createdByUserId: user.id,
+          confirmedAt: null,
+          confirmedByUserId: null,
+          completedAt: null,
+          completedByUserId: null,
+          cancelledAt: null,
+          cancelledByUserId: null,
+          cancellationReasonCode: null,
+          cancellationNote: null,
+          noShowAt: null,
+          noShowByUserId: null,
+          rescheduledFromAppointmentId: previousAppointment.id,
+        })
+
+        await nextAppointment.save()
+
+        return nextAppointment.id
+      })
+
+      const appointment = await loadAppointment({
+        clinicId,
+        appointmentId: newAppointmentId,
+      })
+
+      return response.created({
         appointment: appointment!.serialize(),
       })
     } catch (error) {

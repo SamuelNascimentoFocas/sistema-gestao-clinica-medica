@@ -1,7 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import type { NextFn } from '@adonisjs/core/types/http'
 
-type AppointmentManagementAction = 'create' | 'update' | 'changeStatus'
+type AppointmentManagementAction = 'create' | 'update' | 'changeStatus' | 'reschedule'
 
 type AppointmentManagementOptions = {
   action: AppointmentManagementAction
@@ -9,16 +9,20 @@ type AppointmentManagementOptions = {
 
 const ACTION_PERMISSIONS = {
   create: {
-    all: 'appointments.create',
-    own: 'appointments.create_own',
+    all: ['appointments.create'],
+    own: ['appointments.create_own'],
   },
   update: {
-    all: 'appointments.update',
-    own: 'appointments.update_own',
+    all: ['appointments.update'],
+    own: ['appointments.update_own'],
   },
   changeStatus: {
-    all: 'appointments.change_status',
-    own: 'appointments.change_status_own',
+    all: ['appointments.change_status'],
+    own: ['appointments.change_status_own'],
+  },
+  reschedule: {
+    all: ['appointments.create', 'appointments.update', 'appointments.change_status'],
+    own: ['appointments.create_own', 'appointments.update_own', 'appointments.change_status_own'],
   },
 } as const
 
@@ -39,9 +43,9 @@ export default class AppointmentManagementMiddleware {
     const canManageAll =
       user.isGlobalAdmin ||
       permissionCodes.includes('*') ||
-      permissionCodes.includes(permissions.all)
+      permissions.all.every((permission) => permissionCodes.includes(permission))
 
-    const canManageOwn = permissionCodes.includes(permissions.own)
+    const canManageOwn = permissions.own.every((permission) => permissionCodes.includes(permission))
 
     if (!canManageAll && !canManageOwn) {
       return ctx.response.forbidden({

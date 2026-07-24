@@ -333,6 +333,70 @@ router
           action: 'update',
         })
       )
+    router
+      .post('/:appointmentId/confirm', [AppointmentsController, 'confirm'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['appointments.read'],
+        })
+      )
+      .use(
+        middleware.appointmentManagement({
+          action: 'changeStatus',
+        })
+      )
+
+    router
+      .post('/:appointmentId/cancel', [AppointmentsController, 'cancel'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['appointments.read'],
+        })
+      )
+      .use(
+        middleware.appointmentManagement({
+          action: 'changeStatus',
+        })
+      )
+
+    router
+      .post('/:appointmentId/complete', [AppointmentsController, 'complete'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['appointments.read'],
+        })
+      )
+      .use(
+        middleware.appointmentManagement({
+          action: 'changeStatus',
+        })
+      )
+
+    router
+      .post('/:appointmentId/no-show', [AppointmentsController, 'markNoShow'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['appointments.read'],
+        })
+      )
+      .use(
+        middleware.appointmentManagement({
+          action: 'changeStatus',
+        })
+      )
+
+    router
+      .post('/:appointmentId/reschedule', [AppointmentsController, 'reschedule'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['appointments.read'],
+        })
+      )
+      .use(
+        middleware.appointmentManagement({
+          action: 'reschedule',
+        })
+      )
   })
   .prefix('/api/v1/clinics/:clinicId/appointments')
   .where('clinicId', router.matchers.uuid())

@@ -182,6 +182,47 @@ async function createAvailability({
   })
 }
 
+async function createReceptionistAppointmentContext({
+  clinicName,
+  email,
+  patientName,
+  professionalName,
+  crmNumber,
+}: {
+  clinicName: string
+  email: string
+  patientName: string
+  professionalName: string
+  crmNumber: string
+}) {
+  const clinic = await createClinic(clinicName)
+  const receptionist = await createUser(email)
+
+  await createMembership({
+    user: receptionist,
+    clinic,
+    roleCode: 'receptionist',
+  })
+
+  const { patientLink } = await createPatientLink({
+    clinic,
+    fullName: patientName,
+  })
+
+  const { professionalLink } = await createProfessionalLink({
+    clinic,
+    fullName: professionalName,
+    crmNumber,
+  })
+
+  return {
+    clinic,
+    receptionist,
+    patientLink,
+    professionalLink,
+  }
+}
+
 test.group('Appointments API', (group) => {
   group.each.setup(async () => {
     await truncateClinicSchemaTables()
@@ -899,5 +940,574 @@ test.group('Appointments API', (group) => {
       .where('clinic_professional_id', professionalLink.id)
 
     assert.lengthOf(appointments, 1)
+  })
+
+  test('confirms idempotently and cancels an active appointment', async ({ client, assert }) => {
+    const { clinic, receptionist, patientLink, professionalLink } =
+      await createReceptionistAppointmentContext({
+        clinicName: 'Clínica de Transições',
+        email: 'appointments.transitions@example.com',
+        patientName: 'Paciente de Transições',
+        professionalName: 'Dra. Transições',
+        crmNumber: '96001',
+      })
+
+    const localStart = futureMondayAt(9)
+
+    await createAvailability({
+      professionalLink,
+      weekday: localStart.weekday,
+    })
+
+    const token = await createToken(receptionist)
+
+    const createResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(localStart),
+        durationMinutes: 60,
+      })
+
+    createResponse.assertStatus(201)
+
+    const appointmentId = createResponse.body().appointment.id
+
+    const confirmResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${appointmentId}/confirm`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    confirmResponse.assertStatus(200)
+    assert.equal(confirmResponse.body().appointment.status, 'confirmed')
+    assert.equal(confirmResponse.body().appointment.version, 2)
+
+    const repeatedConfirmResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${appointmentId}/confirm`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    repeatedConfirmResponse.assertStatus(200)
+    assert.equal(repeatedConfirmResponse.body().appointment.status, 'confirmed')
+    assert.equal(repeatedConfirmResponse.body().appointment.version, 2)
+
+    const cancelResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${appointmentId}/cancel`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 2,
+        cancellationReasonCode: 'patient_request',
+        cancellationNote: 'Paciente solicitou o cancelamento',
+      })
+
+    cancelResponse.assertStatus(200)
+    assert.equal(cancelResponse.body().appointment.status, 'cancelled')
+    assert.equal(cancelResponse.body().appointment.version, 3)
+    assert.equal(cancelResponse.body().appointment.cancellationReasonCode, 'patient_request')
+    assert.equal(
+      cancelResponse.body().appointment.cancellationNote,
+      'Paciente solicitou o cancelamento'
+    )
+
+    const invalidConfirmResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${appointmentId}/confirm`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 3,
+      })
+
+    invalidConfirmResponse.assertStatus(409)
+  })
+
+  test('enforces temporal rules for completion and no-show', async ({ client, assert }) => {
+    const { clinic, receptionist, patientLink, professionalLink } =
+      await createReceptionistAppointmentContext({
+        clinicName: 'Clínica de Regras Temporais',
+        email: 'appointments.temporal@example.com',
+        patientName: 'Paciente Temporal',
+        professionalName: 'Dr. Regras Temporais',
+        crmNumber: '96002',
+      })
+
+    const firstStart = futureMondayAt(9)
+    const secondStart = futureMondayAt(11)
+
+    await createAvailability({
+      professionalLink,
+      weekday: firstStart.weekday,
+    })
+
+    const token = await createToken(receptionist)
+
+    const firstCreateResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(firstStart),
+        durationMinutes: 60,
+      })
+
+    firstCreateResponse.assertStatus(201)
+
+    const secondCreateResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(secondStart),
+        durationMinutes: 60,
+      })
+
+    secondCreateResponse.assertStatus(201)
+
+    const firstAppointmentId = firstCreateResponse.body().appointment.id
+    const secondAppointmentId = secondCreateResponse.body().appointment.id
+
+    const earlyCompleteResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${firstAppointmentId}/complete`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    earlyCompleteResponse.assertStatus(409)
+    earlyCompleteResponse.assertBodyContains({
+      message: 'O agendamento não pode ser marcado como realizado antes do horário de início',
+    })
+
+    const earlyNoShowResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${secondAppointmentId}/no-show`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    earlyNoShowResponse.assertStatus(409)
+    earlyNoShowResponse.assertBodyContains({
+      message: 'A falta somente pode ser registrada após 15 minutos do horário inicial',
+    })
+
+    const firstAppointment = await Appointment.findOrFail(firstAppointmentId)
+    const secondAppointment = await Appointment.findOrFail(secondAppointmentId)
+
+    const now = DateTime.utc().startOf('minute')
+
+    firstAppointment.startsAt = now.minus({ hours: 4 })
+    firstAppointment.endsAt = now.minus({ hours: 3 })
+    await firstAppointment.save()
+
+    secondAppointment.startsAt = now.minus({ hours: 2 })
+    secondAppointment.endsAt = now.minus({ hours: 1 })
+    await secondAppointment.save()
+
+    const completeResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${firstAppointmentId}/complete`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    completeResponse.assertStatus(200)
+    assert.equal(completeResponse.body().appointment.status, 'completed')
+    assert.equal(completeResponse.body().appointment.version, 2)
+
+    const noShowResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${secondAppointmentId}/no-show`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    noShowResponse.assertStatus(200)
+    assert.equal(noShowResponse.body().appointment.status, 'no_show')
+    assert.equal(noShowResponse.body().appointment.version, 2)
+  })
+
+  test('reschedules an appointment and preserves the previous record', async ({
+    client,
+    assert,
+  }) => {
+    const { clinic, receptionist, patientLink, professionalLink } =
+      await createReceptionistAppointmentContext({
+        clinicName: 'Clínica de Reagendamento',
+        email: 'appointments.reschedule@example.com',
+        patientName: 'Paciente Reagendado',
+        professionalName: 'Dra. Reagendamento',
+        crmNumber: '96003',
+      })
+
+    const originalStart = futureMondayAt(9)
+    const newStart = originalStart.plus({ hours: 2 })
+
+    await createAvailability({
+      professionalLink,
+      weekday: originalStart.weekday,
+    })
+
+    const token = await createToken(receptionist)
+
+    const createResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(originalStart),
+        durationMinutes: 60,
+        appointmentTypeCode: 'RETURN',
+        administrativeNote: 'Observação preservada',
+      })
+
+    createResponse.assertStatus(201)
+
+    const originalAppointmentId = createResponse.body().appointment.id
+
+    const rescheduleResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${originalAppointmentId}/reschedule`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+        startsAt: toUtcIso(newStart),
+        durationMinutes: 60,
+        cancellationNote: 'Paciente solicitou novo horário',
+      })
+
+    rescheduleResponse.assertStatus(201)
+
+    const nextAppointment = rescheduleResponse.body().appointment
+
+    assert.notEqual(nextAppointment.id, originalAppointmentId)
+    assert.equal(nextAppointment.status, 'scheduled')
+    assert.equal(nextAppointment.version, 1)
+    assert.equal(nextAppointment.rescheduledFromAppointmentId, originalAppointmentId)
+    assert.equal(nextAppointment.appointmentTypeCode, 'RETURN')
+    assert.equal(nextAppointment.administrativeNote, 'Observação preservada')
+
+    const previousAppointment = await Appointment.findOrFail(originalAppointmentId)
+
+    assert.equal(previousAppointment.status, 'cancelled')
+    assert.equal(previousAppointment.version, 2)
+    assert.equal(previousAppointment.cancellationReasonCode, 'rescheduled')
+    assert.equal(previousAppointment.cancellationNote, 'Paciente solicitou novo horário')
+
+    const successors = await Appointment.query().where(
+      'rescheduled_from_appointment_id',
+      originalAppointmentId
+    )
+
+    assert.lengthOf(successors, 1)
+
+    const repeatedRescheduleResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${originalAppointmentId}/reschedule`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 2,
+        startsAt: toUtcIso(newStart.plus({ hours: 2 })),
+      })
+
+    repeatedRescheduleResponse.assertStatus(409)
+  })
+
+  test('rolls back rescheduling when the new slot conflicts', async ({ client, assert }) => {
+    const { clinic, receptionist, patientLink, professionalLink } =
+      await createReceptionistAppointmentContext({
+        clinicName: 'Clínica de Reagendamento Atômico',
+        email: 'appointments.atomic@example.com',
+        patientName: 'Paciente Atômico',
+        professionalName: 'Dr. Reagendamento Atômico',
+        crmNumber: '96004',
+      })
+
+    const originalStart = futureMondayAt(9)
+    const occupiedStart = originalStart.plus({ hours: 2 })
+
+    await createAvailability({
+      professionalLink,
+      weekday: originalStart.weekday,
+    })
+
+    const token = await createToken(receptionist)
+
+    const originalResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(originalStart),
+        durationMinutes: 60,
+      })
+
+    originalResponse.assertStatus(201)
+
+    const occupiedResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(occupiedStart),
+        durationMinutes: 60,
+      })
+
+    occupiedResponse.assertStatus(201)
+
+    const originalAppointmentId = originalResponse.body().appointment.id
+
+    const rescheduleResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${originalAppointmentId}/reschedule`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+        startsAt: toUtcIso(occupiedStart),
+        durationMinutes: 60,
+      })
+
+    rescheduleResponse.assertStatus(409)
+
+    const originalAppointment = await Appointment.findOrFail(originalAppointmentId)
+
+    assert.equal(originalAppointment.status, 'scheduled')
+    assert.equal(originalAppointment.version, 1)
+    assert.isNull(originalAppointment.cancelledAt)
+    assert.isNull(originalAppointment.cancellationReasonCode)
+
+    const successors = await Appointment.query().where(
+      'rescheduled_from_appointment_id',
+      originalAppointmentId
+    )
+
+    assert.lengthOf(successors, 0)
+  })
+
+  test('allows a doctor to change and reschedule only own appointments', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await createClinic('Clínica de Status dos Médicos')
+
+    const firstDoctor = await createUser('appointments.status.first.doctor@example.com')
+
+    const secondDoctor = await createUser('appointments.status.second.doctor@example.com')
+
+    await createMembership({
+      user: firstDoctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    await createMembership({
+      user: secondDoctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    const { patientLink } = await createPatientLink({
+      clinic,
+      fullName: 'Paciente de Status Médico',
+    })
+
+    const { professionalLink: firstProfessionalLink } = await createProfessionalLink({
+      clinic,
+      fullName: 'Dr. Primeiro Status',
+      crmNumber: '96005',
+      userId: firstDoctor.id,
+    })
+
+    const { professionalLink: secondProfessionalLink } = await createProfessionalLink({
+      clinic,
+      fullName: 'Dra. Segundo Status',
+      crmNumber: '96006',
+      userId: secondDoctor.id,
+    })
+
+    const firstStart = futureMondayAt(9)
+    const secondStart = futureMondayAt(13)
+
+    await createAvailability({
+      professionalLink: firstProfessionalLink,
+      weekday: firstStart.weekday,
+    })
+
+    await createAvailability({
+      professionalLink: secondProfessionalLink,
+      weekday: secondStart.weekday,
+    })
+
+    const firstToken = await createToken(firstDoctor)
+    const secondToken = await createToken(secondDoctor)
+
+    const firstCreateResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstToken}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: firstProfessionalLink.id,
+        startsAt: toUtcIso(firstStart),
+        durationMinutes: 60,
+      })
+
+    firstCreateResponse.assertStatus(201)
+
+    const secondCreateResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${secondToken}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: secondProfessionalLink.id,
+        startsAt: toUtcIso(secondStart),
+        durationMinutes: 60,
+      })
+
+    secondCreateResponse.assertStatus(201)
+
+    const firstAppointmentId = firstCreateResponse.body().appointment.id
+
+    const secondAppointmentId = secondCreateResponse.body().appointment.id
+
+    const ownConfirmResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${firstAppointmentId}/confirm`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstToken}`)
+      .json({
+        expectedVersion: 1,
+      })
+
+    ownConfirmResponse.assertStatus(200)
+    assert.equal(ownConfirmResponse.body().appointment.version, 2)
+
+    const ownRescheduleResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${firstAppointmentId}/reschedule`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstToken}`)
+      .json({
+        expectedVersion: 2,
+        startsAt: toUtcIso(firstStart.plus({ hours: 2 })),
+        durationMinutes: 60,
+      })
+
+    ownRescheduleResponse.assertStatus(201)
+
+    const otherCancelResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${secondAppointmentId}/cancel`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstToken}`)
+      .json({
+        expectedVersion: 1,
+        cancellationReasonCode: 'other',
+      })
+
+    otherCancelResponse.assertStatus(403)
+
+    const otherRescheduleResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${secondAppointmentId}/reschedule`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstToken}`)
+      .json({
+        expectedVersion: 1,
+        startsAt: toUtcIso(secondStart.plus({ hours: 2 })),
+      })
+
+    otherRescheduleResponse.assertStatus(403)
+  })
+
+  test('requires the reschedule command for schedule changes', async ({ client, assert }) => {
+    const { clinic, receptionist, patientLink, professionalLink } =
+      await createReceptionistAppointmentContext({
+        clinicName: 'Clínica de Alteração de Agenda',
+        email: 'appointments.schedule.change@example.com',
+        patientName: 'Paciente de Alteração',
+        professionalName: 'Dra. Alteração',
+        crmNumber: '96007',
+      })
+
+    const originalStart = futureMondayAt(9)
+
+    await createAvailability({
+      professionalLink,
+      weekday: originalStart.weekday,
+    })
+
+    const token = await createToken(receptionist)
+
+    const createResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        patientClinicId: patientLink.id,
+        clinicProfessionalId: professionalLink.id,
+        startsAt: toUtcIso(originalStart),
+        durationMinutes: 60,
+      })
+
+    createResponse.assertStatus(201)
+
+    const appointmentId = createResponse.body().appointment.id
+
+    const directUpdateResponse = await client
+      .patch(`/api/v1/clinics/${clinic.id}/appointments/${appointmentId}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        startsAt: toUtcIso(originalStart.plus({ hours: 1 })),
+        durationMinutes: 30,
+        expectedVersion: 1,
+      })
+
+    directUpdateResponse.assertStatus(400)
+
+    let appointment = await Appointment.findOrFail(appointmentId)
+
+    assert.equal(appointment.startsAt.toMillis(), originalStart.toUTC().toMillis())
+    assert.equal(appointment.version, 1)
+
+    const noChangeRescheduleResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/appointments/${appointmentId}/reschedule`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        expectedVersion: 1,
+        startsAt: toUtcIso(originalStart),
+        durationMinutes: 60,
+      })
+
+    noChangeRescheduleResponse.assertStatus(422)
+    noChangeRescheduleResponse.assertBodyContains({
+      message: 'Informe um novo horário, duração ou profissional para o reagendamento',
+    })
+
+    appointment = await Appointment.findOrFail(appointmentId)
+
+    assert.equal(appointment.status, 'scheduled')
+    assert.equal(appointment.version, 1)
   })
 })

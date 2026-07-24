@@ -51,21 +51,51 @@ export const updateAppointmentValidator = vine.compile(
   vine.object({
     patientClinicId: vine.string().uuid().optional(),
 
+    appointmentTypeCode: vine.string().trim().minLength(1).maxLength(60).nullable().optional(),
+
+    administrativeNote: vine.string().trim().minLength(1).maxLength(500).nullable().optional(),
+
+    expectedVersion: vine.number({ strict: true }).withoutDecimals().min(1),
+  })
+)
+
+export const appointmentVersionValidator = vine.compile(
+  vine.object({
+    expectedVersion: vine.number({ strict: true }).withoutDecimals().min(1),
+  })
+)
+
+export const cancelAppointmentValidator = vine.compile(
+  vine.object({
+    expectedVersion: vine.number({ strict: true }).withoutDecimals().min(1),
+
+    cancellationReasonCode: vine.enum([
+      'patient_request',
+      'professional_unavailable',
+      'clinic_request',
+      'duplicate',
+      'created_by_mistake',
+      'other',
+    ]),
+
+    cancellationNote: vine.string().trim().minLength(1).maxLength(500).nullable().optional(),
+  })
+)
+
+export const rescheduleAppointmentValidator = vine.compile(
+  vine.object({
+    expectedVersion: vine.number({ strict: true }).withoutDecimals().min(1),
+
     clinicProfessionalId: vine.string().uuid().optional(),
 
     startsAt: vine
       .date({
         formats: ['iso8601'],
       })
-      .transform((value) => DateTime.fromJSDate(value).toUTC())
-      .optional(),
+      .transform((value) => DateTime.fromJSDate(value).toUTC()),
 
     durationMinutes: vine.number({ strict: true }).withoutDecimals().min(5).max(480).optional(),
 
-    appointmentTypeCode: vine.string().trim().minLength(1).maxLength(60).nullable().optional(),
-
-    administrativeNote: vine.string().trim().minLength(1).maxLength(500).nullable().optional(),
-
-    expectedVersion: vine.number({ strict: true }).withoutDecimals().min(1),
+    cancellationNote: vine.string().trim().minLength(1).maxLength(500).nullable().optional(),
   })
 )
