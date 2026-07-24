@@ -8,6 +8,8 @@ const ClinicMembershipsController = () => import('#controllers/clinic_membership
 const ClinicContextsController = () => import('#controllers/clinic_contexts_controller')
 const PatientsController = () => import('#controllers/patients_controller')
 const ProfessionalsController = () => import('#controllers/professionals_controller')
+const ProfessionalSchedulesController = () =>
+  import('#controllers/professional_schedules_controller')
 
 router.get('/', async () => {
   return {
@@ -203,6 +205,88 @@ router
   .prefix('/api/v1/clinics/:clinicId/professionals')
   .where('clinicId', router.matchers.uuid())
   .where('professionalId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+
+router
+  .group(() => {
+    router.get('/schedule', [ProfessionalSchedulesController, 'show']).use(
+      middleware.clinicPermission({
+        permissions: ['schedules.read'],
+      })
+    )
+
+    router
+      .post('/weekly-availabilities', [ProfessionalSchedulesController, 'storeWeeklyAvailability'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['schedules.read'],
+        })
+      )
+      .use(middleware.scheduleManagement())
+
+    router
+      .patch('/weekly-availabilities/:availabilityId', [
+        ProfessionalSchedulesController,
+        'updateWeeklyAvailability',
+      ])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['schedules.read'],
+        })
+      )
+      .use(middleware.scheduleManagement())
+
+    router
+      .patch('/weekly-availabilities/:availabilityId/status', [
+        ProfessionalSchedulesController,
+        'updateWeeklyAvailabilityStatus',
+      ])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['schedules.read'],
+        })
+      )
+      .use(middleware.scheduleManagement())
+
+    router
+      .post('/schedule-blocks', [ProfessionalSchedulesController, 'storeScheduleBlock'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['schedules.read'],
+        })
+      )
+      .use(middleware.scheduleManagement())
+
+    router
+      .patch('/schedule-blocks/:blockId', [ProfessionalSchedulesController, 'updateScheduleBlock'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['schedules.read'],
+        })
+      )
+      .use(middleware.scheduleManagement())
+
+    router
+      .patch('/schedule-blocks/:blockId/status', [
+        ProfessionalSchedulesController,
+        'updateScheduleBlockStatus',
+      ])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['schedules.read'],
+        })
+      )
+      .use(middleware.scheduleManagement())
+  })
+  .prefix('/api/v1/clinics/:clinicId/professionals/:professionalId')
+  .where('clinicId', router.matchers.uuid())
+  .where('professionalId', router.matchers.uuid())
+  .where('availabilityId', router.matchers.uuid())
+  .where('blockId', router.matchers.uuid())
   .use(
     middleware.auth({
       guards: ['api'],
