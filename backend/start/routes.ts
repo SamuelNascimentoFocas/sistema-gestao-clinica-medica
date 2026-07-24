@@ -11,6 +11,7 @@ const ProfessionalsController = () => import('#controllers/professionals_control
 const ProfessionalSchedulesController = () =>
   import('#controllers/professional_schedules_controller')
 const AppointmentsController = () => import('#controllers/appointments_controller')
+const MedicalRecordsController = () => import('#controllers/medical_records_controller')
 
 router.get('/', async () => {
   return {
@@ -165,6 +166,42 @@ router
   .prefix('/api/v1/clinics/:clinicId/patients')
   .where('clinicId', router.matchers.uuid())
   .where('patientId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+
+router
+  .group(() => {
+    router.get('/', [MedicalRecordsController, 'index']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'medical_records.read'],
+      })
+    )
+
+    router.post('/entries', [MedicalRecordsController, 'storeEntry']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'medical_records.create'],
+      })
+    )
+
+    router.get('/entries/:entryId', [MedicalRecordsController, 'showEntry']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'medical_records.read'],
+      })
+    )
+
+    router.post('/entries/:entryId/corrections', [MedicalRecordsController, 'correctEntry']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'medical_records.correct'],
+      })
+    )
+  })
+  .prefix('/api/v1/clinics/:clinicId/patients/:patientId/medical-record')
+  .where('clinicId', router.matchers.uuid())
+  .where('patientId', router.matchers.uuid())
+  .where('entryId', router.matchers.uuid())
   .use(
     middleware.auth({
       guards: ['api'],

@@ -1,7 +1,9 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column } from '@adonisjs/lucid/orm'
-import type { BelongsTo } from '@adonisjs/lucid/types/relations'
+import { BaseModel, belongsTo, column, hasMany } from '@adonisjs/lucid/orm'
+import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import Patient from '#models/patient'
+import MedicalRecordEntry from '#models/medical_record_entry'
+import MedicalRecordAccessLog from '#models/medical_record_access_log'
 
 export default class MedicalRecord extends BaseModel {
   static table = 'clinic.medical_records'
@@ -26,4 +28,14 @@ export default class MedicalRecord extends BaseModel {
     foreignKey: 'patientId',
   })
   declare patient: BelongsTo<typeof Patient>
+
+  @hasMany(() => MedicalRecordEntry, {
+    foreignKey: 'medicalRecordId',
+  })
+  declare entries: HasMany<typeof MedicalRecordEntry>
+
+  @hasMany(() => MedicalRecordAccessLog, {
+    foreignKey: 'medicalRecordId',
+  })
+  declare accessLogs: HasMany<typeof MedicalRecordAccessLog>
 }
