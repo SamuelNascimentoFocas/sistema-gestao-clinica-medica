@@ -4,6 +4,7 @@ import type { HasMany } from '@adonisjs/lucid/types/relations'
 import UserClinicRole from '#models/user_clinic_role'
 import PatientClinic from '#models/patient_clinic'
 import ClinicProfessional from '#models/clinic_professional'
+import Appointment from '#models/appointment'
 
 export default class Clinic extends BaseModel {
   static table = 'clinic.clinics'
@@ -71,4 +72,9 @@ export default class Clinic extends BaseModel {
     foreignKey: 'clinicId',
   })
   declare professionalLinks: HasMany<typeof ClinicProfessional>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'clinicId',
+  })
+  declare appointments: HasMany<typeof Appointment>
 }

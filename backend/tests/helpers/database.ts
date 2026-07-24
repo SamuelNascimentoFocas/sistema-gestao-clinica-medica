@@ -4,6 +4,7 @@ export async function truncateClinicSchemaTables() {
   await db.rawQuery(`
     TRUNCATE TABLE
       clinic.auth_access_tokens,
+      clinic.appointments,
       clinic.professional_schedule_blocks,
       clinic.professional_weekly_availabilities,
       clinic.clinic_professionals,

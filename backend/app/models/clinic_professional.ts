@@ -5,6 +5,7 @@ import Clinic from '#models/clinic'
 import Professional from '#models/professional'
 import ProfessionalWeeklyAvailability from '#models/professional_weekly_availability'
 import ProfessionalScheduleBlock from '#models/professional_schedule_block'
+import Appointment from '#models/appointment'
 
 export default class ClinicProfessional extends BaseModel {
   static table = 'clinic.clinic_professionals'
@@ -64,4 +65,9 @@ export default class ClinicProfessional extends BaseModel {
     foreignKey: 'clinicProfessionalId',
   })
   declare scheduleBlocks: HasMany<typeof ProfessionalScheduleBlock>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'clinicProfessionalId',
+  })
+  declare appointments: HasMany<typeof Appointment>
 }
