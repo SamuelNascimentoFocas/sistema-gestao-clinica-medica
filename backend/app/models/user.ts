@@ -7,6 +7,7 @@ import { withAuthFinder } from '@adonisjs/auth/mixins/lucid'
 import { DbAccessTokensProvider, type AccessToken } from '@adonisjs/auth/access_tokens'
 import UserClinicRole from '#models/user_clinic_role'
 import Professional from '#models/professional'
+import Appointment from '#models/appointment'
 
 const AuthFinder = withAuthFinder(() => hash.use('bcrypt'), {
   uids: ['emailNormalized'],
@@ -69,4 +70,29 @@ export default class User extends compose(BaseModel, AuthFinder) {
     foreignKey: 'userId',
   })
   declare professionalProfile: HasOne<typeof Professional>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'createdByUserId',
+  })
+  declare createdAppointments: HasMany<typeof Appointment>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'confirmedByUserId',
+  })
+  declare confirmedAppointments: HasMany<typeof Appointment>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'completedByUserId',
+  })
+  declare completedAppointments: HasMany<typeof Appointment>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'cancelledByUserId',
+  })
+  declare cancelledAppointments: HasMany<typeof Appointment>
+
+  @hasMany(() => Appointment, {
+    foreignKey: 'noShowByUserId',
+  })
+  declare noShowAppointments: HasMany<typeof Appointment>
 }
