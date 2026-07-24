@@ -75,6 +75,10 @@ export const PERMISSIONS = [
     code: 'schedules.manage',
     description: 'Gerenciar horários de atendimento',
   },
+  {
+    code: 'schedules.manage_own',
+    description: 'Gerenciar a própria agenda profissional',
+  },
 
   {
     code: 'appointments.read',
@@ -139,6 +143,7 @@ const DOCTOR_PERMISSIONS = [
   'patients.read',
   'professionals.read',
   'schedules.read',
+  'schedules.manage_own',
   'appointments.read',
   'appointments.change_status',
   'medical_records.read',
