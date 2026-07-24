@@ -50,6 +50,9 @@ test.group('Authorization catalog', (group) => {
     const receptionistPermissions = receptionist.permissions.map((permission) => permission.code)
 
     assert.include(receptionistPermissions, 'appointments.create')
+    assert.include(receptionistPermissions, 'appointments.update')
+    assert.notInclude(receptionistPermissions, 'appointments.create_own')
+    assert.notInclude(receptionistPermissions, 'appointments.update_own')
     assert.notInclude(receptionistPermissions, 'medical_records.read')
     assert.notInclude(receptionistPermissions, 'schedules.manage')
     assert.notInclude(receptionistPermissions, 'schedules.manage_own')
@@ -68,6 +71,10 @@ test.group('Authorization catalog', (group) => {
     assert.include(doctorPermissions, 'schedules.manage_own')
     assert.notInclude(doctorPermissions, 'schedules.manage')
 
+    assert.include(doctorPermissions, 'appointments.create_own')
+    assert.include(doctorPermissions, 'appointments.update_own')
+    assert.notInclude(doctorPermissions, 'appointments.create')
+    assert.notInclude(doctorPermissions, 'appointments.update')
     assert.include(doctorPermissions, 'appointments.change_status_own')
     assert.notInclude(doctorPermissions, 'appointments.change_status')
 

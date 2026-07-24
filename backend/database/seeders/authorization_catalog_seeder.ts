@@ -89,8 +89,16 @@ export const PERMISSIONS = [
     description: 'Cadastrar agendamentos',
   },
   {
+    code: 'appointments.create_own',
+    description: 'Cadastrar agendamentos para o próprio profissional',
+  },
+  {
     code: 'appointments.update',
     description: 'Atualizar agendamentos',
+  },
+  {
+    code: 'appointments.update_own',
+    description: 'Atualizar agendamentos do próprio profissional',
   },
   {
     code: 'appointments.change_status',
@@ -149,6 +157,8 @@ const DOCTOR_PERMISSIONS = [
   'schedules.read',
   'schedules.manage_own',
   'appointments.read',
+  'appointments.create_own',
+  'appointments.update_own',
   'appointments.change_status_own',
   'medical_records.read',
   'medical_records.create',
