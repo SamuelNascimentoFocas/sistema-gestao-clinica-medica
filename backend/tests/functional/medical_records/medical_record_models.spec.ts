@@ -8,6 +8,7 @@ import PatientClinic from '#models/patient_clinic'
 import MedicalRecord from '#models/medical_record'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAccessLog from '#models/medical_record_access_log'
+import MedicalRecordAttachment from '#models/medical_record_attachment'
 import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
 import Appointment from '#models/appointment'
@@ -164,6 +165,81 @@ async function createAppointment({
     noShowAt: null,
     noShowByUserId: null,
     rescheduledFromAppointmentId: null,
+  })
+}
+
+async function createClinicalEntry({
+  medicalRecord,
+  patient,
+  clinic,
+  patientLink,
+  professionalLink,
+  user,
+  content = 'Clinical entry with attachment.',
+}: {
+  medicalRecord: MedicalRecord
+  patient: Patient
+  clinic: Clinic
+  patientLink: PatientClinic
+  professionalLink: ClinicProfessional
+  user: User
+  content?: string
+}) {
+  return MedicalRecordEntry.create({
+    medicalRecordId: medicalRecord.id,
+    patientId: patient.id,
+    clinicId: clinic.id,
+    patientClinicId: patientLink.id,
+    clinicProfessionalId: professionalLink.id,
+    appointmentId: null,
+    authorUserId: user.id,
+    entryTypeCode: 'evolution',
+    content,
+    correctsEntryId: null,
+  })
+}
+
+async function createAttachment({
+  entry,
+  medicalRecord,
+  patient,
+  clinic,
+  user,
+  storageKey,
+  originalName = 'clinical-document.pdf',
+  contentType = 'application/pdf',
+  sizeInBytes = 2048,
+  sha256 = 'a'.repeat(64),
+  status = 'available',
+  statusReason = null,
+}: {
+  entry: MedicalRecordEntry
+  medicalRecord: MedicalRecord
+  patient: Patient
+  clinic: Clinic
+  user: User
+  storageKey: string
+  originalName?: string
+  contentType?: string
+  sizeInBytes?: number
+  sha256?: string
+  status?: 'pending' | 'available' | 'rejected'
+  statusReason?: string | null
+}) {
+  return MedicalRecordAttachment.create({
+    medicalRecordEntryId: entry.id,
+    medicalRecordId: medicalRecord.id,
+    patientId: patient.id,
+    clinicId: clinic.id,
+    uploadedByUserId: user.id,
+    originalName,
+    storageDisk: 'private_fs',
+    storageKey,
+    contentType,
+    sizeInBytes,
+    sha256,
+    status,
+    statusReason,
   })
 }
 
@@ -672,5 +748,433 @@ test.group('Medical record models', (group) => {
     )
 
     assert.equal(incompatiblePatientLinkError.code, '23503')
+  })
+
+  test('relates attachments to entries, records, users and download logs', async ({ assert }) => {
+    const clinic = await createClinic('Attachment Relations Clinic')
+    const doctor = await createUser('attachments.relations@example.com')
+
+    const { patient, medicalRecord } = await createPatient('Attachment Relations Patient')
+
+    const patientLink = await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const { professionalLink } = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Attachment Relations',
+      crmNumber: '97301',
+    })
+
+    const entry = await createClinicalEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink,
+      user: doctor,
+    })
+
+    const attachment = await createAttachment({
+      entry,
+      medicalRecord,
+      patient,
+      clinic,
+      user: doctor,
+      storageKey: `${medicalRecord.id}/${entry.id}/relations-document.pdf`,
+    })
+
+    const downloadLog = await MedicalRecordAccessLog.create({
+      medicalRecordId: medicalRecord.id,
+      patientId: patient.id,
+      clinicId: clinic.id,
+      patientClinicId: patientLink.id,
+      userId: doctor.id,
+      medicalRecordAttachmentId: attachment.id,
+      accessAction: 'download_attachment',
+      purposeCode: 'patient_care',
+      purposeNote: null,
+    })
+
+    const loadedEntry = await MedicalRecordEntry.query()
+      .where('id', entry.id)
+      .preload('attachments')
+      .firstOrFail()
+
+    const loadedRecord = await MedicalRecord.query()
+      .where('id', medicalRecord.id)
+      .preload('attachments')
+      .firstOrFail()
+
+    const loadedAttachment = await MedicalRecordAttachment.query()
+      .where('id', attachment.id)
+      .preload('medicalRecordEntry')
+      .preload('medicalRecord')
+      .preload('patient')
+      .preload('clinic')
+      .preload('uploadedByUser')
+      .preload('accessLogs')
+      .firstOrFail()
+
+    const loadedLog = await MedicalRecordAccessLog.query()
+      .where('id', downloadLog.id)
+      .preload('medicalRecordAttachment')
+      .firstOrFail()
+
+    assert.lengthOf(loadedEntry.attachments, 1)
+    assert.equal(loadedEntry.attachments[0].id, attachment.id)
+
+    assert.lengthOf(loadedRecord.attachments, 1)
+    assert.equal(loadedRecord.attachments[0].id, attachment.id)
+
+    assert.equal(loadedAttachment.medicalRecordEntry.id, entry.id)
+    assert.equal(loadedAttachment.medicalRecord.id, medicalRecord.id)
+    assert.equal(loadedAttachment.patient.id, patient.id)
+    assert.equal(loadedAttachment.clinic.id, clinic.id)
+    assert.equal(loadedAttachment.uploadedByUser.id, doctor.id)
+
+    assert.lengthOf(loadedAttachment.accessLogs, 1)
+    assert.equal(loadedAttachment.accessLogs[0].id, downloadLog.id)
+
+    assert.equal(loadedLog.medicalRecordAttachment.id, attachment.id)
+  })
+
+  test('enforces attachment scope, storage uniqueness and metadata constraints', async ({
+    assert,
+  }) => {
+    const clinic = await createClinic('Attachment Constraints Clinic')
+    const doctor = await createUser('attachments.constraints@example.com')
+
+    const { patient: firstPatient, medicalRecord: firstRecord } = await createPatient(
+      'First Attachment Patient'
+    )
+
+    const { patient: secondPatient, medicalRecord: secondRecord } = await createPatient(
+      'Second Attachment Patient'
+    )
+
+    const firstPatientLink = await createPatientLink({
+      patient: firstPatient,
+      clinic,
+    })
+
+    const secondPatientLink = await createPatientLink({
+      patient: secondPatient,
+      clinic,
+    })
+
+    const { professionalLink } = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Attachment Constraints',
+      crmNumber: '97302',
+    })
+
+    const firstEntry = await createClinicalEntry({
+      medicalRecord: firstRecord,
+      patient: firstPatient,
+      clinic,
+      patientLink: firstPatientLink,
+      professionalLink,
+      user: doctor,
+    })
+
+    const secondEntry = await createClinicalEntry({
+      medicalRecord: secondRecord,
+      patient: secondPatient,
+      clinic,
+      patientLink: secondPatientLink,
+      professionalLink,
+      user: doctor,
+    })
+
+    const pendingAttachment = await MedicalRecordAttachment.create({
+      medicalRecordEntryId: firstEntry.id,
+      medicalRecordId: firstRecord.id,
+      patientId: firstPatient.id,
+      clinicId: clinic.id,
+      uploadedByUserId: doctor.id,
+      originalName: 'pending-document.pdf',
+      storageDisk: 'private_fs',
+      storageKey: `${firstRecord.id}/${firstEntry.id}/pending-document.pdf`,
+      contentType: 'application/pdf',
+      sizeInBytes: 1024,
+      sha256: 'b'.repeat(64),
+    })
+
+    const persistedPendingAttachment = await MedicalRecordAttachment.findOrFail(
+      pendingAttachment.id
+    )
+
+    assert.equal(persistedPendingAttachment.status, 'pending')
+    assert.isNull(persistedPendingAttachment.statusReason)
+
+    const wrongScopeError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: secondRecord,
+        patient: secondPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/wrong-scope.pdf',
+      })
+    )
+
+    assert.equal(wrongScopeError.code, '23503')
+    assert.equal(wrongScopeError.constraint, 'medical_record_attachments_entry_scope_foreign')
+
+    const duplicateStorageError = await captureRejectedError(() =>
+      createAttachment({
+        entry: secondEntry,
+        medicalRecord: secondRecord,
+        patient: secondPatient,
+        clinic,
+        user: doctor,
+        storageKey: pendingAttachment.storageKey,
+      })
+    )
+
+    assert.equal(duplicateStorageError.code, '23505')
+    assert.equal(duplicateStorageError.constraint, 'medical_record_attachments_storage_unique')
+
+    const emptyFileError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: firstRecord,
+        patient: firstPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/empty-file.pdf',
+        sizeInBytes: 0,
+      })
+    )
+
+    assert.equal(emptyFileError.code, '23514')
+    assert.equal(emptyFileError.constraint, 'medical_record_attachments_size_valid')
+
+    const oversizedFileError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: firstRecord,
+        patient: firstPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/oversized-file.pdf',
+        sizeInBytes: 10_485_761,
+      })
+    )
+
+    assert.equal(oversizedFileError.code, '23514')
+    assert.equal(oversizedFileError.constraint, 'medical_record_attachments_size_valid')
+
+    const invalidHashError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: firstRecord,
+        patient: firstPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/hash.pdf',
+        sha256: 'INVALID',
+      })
+    )
+
+    assert.equal(invalidHashError.code, '23514')
+    assert.equal(invalidHashError.constraint, 'medical_record_attachments_sha256_format')
+
+    const blankNameError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: firstRecord,
+        patient: firstPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/blank-name.pdf',
+        originalName: '   ',
+      })
+    )
+
+    assert.equal(blankNameError.code, '23514')
+    assert.equal(blankNameError.constraint, 'medical_record_attachments_original_name_not_blank')
+
+    const rejectedWithoutReasonError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: firstRecord,
+        patient: firstPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/rejected-without-reason.pdf',
+        status: 'rejected',
+        statusReason: null,
+      })
+    )
+
+    assert.equal(rejectedWithoutReasonError.code, '23514')
+    assert.equal(
+      rejectedWithoutReasonError.constraint,
+      'medical_record_attachments_rejection_consistency'
+    )
+
+    const availableWithReasonError = await captureRejectedError(() =>
+      createAttachment({
+        entry: firstEntry,
+        medicalRecord: firstRecord,
+        patient: firstPatient,
+        clinic,
+        user: doctor,
+        storageKey: 'invalid/available-with-reason.pdf',
+        status: 'available',
+        statusReason: 'A reason is not valid for an available file.',
+      })
+    )
+
+    assert.equal(availableWithReasonError.code, '23514')
+    assert.equal(
+      availableWithReasonError.constraint,
+      'medical_record_attachments_rejection_consistency'
+    )
+  })
+
+  test('validates attachment-aware access logs and their medical-record scope', async ({
+    assert,
+  }) => {
+    const clinic = await createClinic('Attachment Access Logs Clinic')
+    const doctor = await createUser('attachments.logs@example.com')
+
+    const { patient: firstPatient, medicalRecord: firstRecord } = await createPatient(
+      'First Attachment Log Patient'
+    )
+
+    const { patient: secondPatient, medicalRecord: secondRecord } = await createPatient(
+      'Second Attachment Log Patient'
+    )
+
+    const firstPatientLink = await createPatientLink({
+      patient: firstPatient,
+      clinic,
+    })
+
+    const secondPatientLink = await createPatientLink({
+      patient: secondPatient,
+      clinic,
+    })
+
+    const { professionalLink } = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Attachment Logs',
+      crmNumber: '97303',
+    })
+
+    const firstEntry = await createClinicalEntry({
+      medicalRecord: firstRecord,
+      patient: firstPatient,
+      clinic,
+      patientLink: firstPatientLink,
+      professionalLink,
+      user: doctor,
+    })
+
+    const attachment = await createAttachment({
+      entry: firstEntry,
+      medicalRecord: firstRecord,
+      patient: firstPatient,
+      clinic,
+      user: doctor,
+      storageKey: `${firstRecord.id}/${firstEntry.id}/access-log-document.pdf`,
+    })
+
+    const listLog = await MedicalRecordAccessLog.create({
+      medicalRecordId: firstRecord.id,
+      patientId: firstPatient.id,
+      clinicId: clinic.id,
+      patientClinicId: firstPatientLink.id,
+      userId: doctor.id,
+      medicalRecordAttachmentId: null,
+      accessAction: 'list_attachments',
+      purposeCode: 'patient_care',
+      purposeNote: null,
+    })
+
+    const downloadLog = await MedicalRecordAccessLog.create({
+      medicalRecordId: firstRecord.id,
+      patientId: firstPatient.id,
+      clinicId: clinic.id,
+      patientClinicId: firstPatientLink.id,
+      userId: doctor.id,
+      medicalRecordAttachmentId: attachment.id,
+      accessAction: 'download_attachment',
+      purposeCode: 'patient_care',
+      purposeNote: null,
+    })
+
+    assert.equal(listLog.accessAction, 'list_attachments')
+    assert.isNull(listLog.medicalRecordAttachmentId)
+
+    assert.equal(downloadLog.accessAction, 'download_attachment')
+    assert.equal(downloadLog.medicalRecordAttachmentId, attachment.id)
+
+    const downloadWithoutAttachmentError = await captureRejectedError(() =>
+      MedicalRecordAccessLog.create({
+        medicalRecordId: firstRecord.id,
+        patientId: firstPatient.id,
+        clinicId: clinic.id,
+        patientClinicId: firstPatientLink.id,
+        userId: doctor.id,
+        medicalRecordAttachmentId: null,
+        accessAction: 'download_attachment',
+        purposeCode: 'patient_care',
+        purposeNote: null,
+      })
+    )
+
+    assert.equal(downloadWithoutAttachmentError.code, '23514')
+    assert.equal(
+      downloadWithoutAttachmentError.constraint,
+      'medical_record_access_logs_attachment_consistency'
+    )
+
+    const listWithAttachmentError = await captureRejectedError(() =>
+      MedicalRecordAccessLog.create({
+        medicalRecordId: firstRecord.id,
+        patientId: firstPatient.id,
+        clinicId: clinic.id,
+        patientClinicId: firstPatientLink.id,
+        userId: doctor.id,
+        medicalRecordAttachmentId: attachment.id,
+        accessAction: 'list_attachments',
+        purposeCode: 'patient_care',
+        purposeNote: null,
+      })
+    )
+
+    assert.equal(listWithAttachmentError.code, '23514')
+    assert.equal(
+      listWithAttachmentError.constraint,
+      'medical_record_access_logs_attachment_consistency'
+    )
+
+    const crossPatientAttachmentError = await captureRejectedError(() =>
+      MedicalRecordAccessLog.create({
+        medicalRecordId: secondRecord.id,
+        patientId: secondPatient.id,
+        clinicId: clinic.id,
+        patientClinicId: secondPatientLink.id,
+        userId: doctor.id,
+        medicalRecordAttachmentId: attachment.id,
+        accessAction: 'download_attachment',
+        purposeCode: 'care_coordination',
+        purposeNote: null,
+      })
+    )
+
+    assert.equal(crossPatientAttachmentError.code, '23503')
+    assert.equal(
+      crossPatientAttachmentError.constraint,
+      'medical_record_access_logs_attachment_scope_foreign'
+    )
   })
 })
