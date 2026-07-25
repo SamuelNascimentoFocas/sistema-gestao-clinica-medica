@@ -1,5 +1,9 @@
+import { createHash } from 'node:crypto'
+import { readFile, readdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
+import app from '@adonisjs/core/services/app'
 import User from '#models/user'
 import Clinic from '#models/clinic'
 import Role from '#models/role'
@@ -9,11 +13,39 @@ import PatientClinic from '#models/patient_clinic'
 import MedicalRecord from '#models/medical_record'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAccessLog from '#models/medical_record_access_log'
+import MedicalRecordAttachment from '#models/medical_record_attachment'
 import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
 import Appointment from '#models/appointment'
+
+const privateAttachmentStorageRoot = app.makePath('storage/private')
+
+const medicalRecordAttachmentStorageRoot = join(privateAttachmentStorageRoot, 'medical-records')
+
+const validPdfBuffer = Buffer.from('%PDF-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n')
+
+const validPngBuffer = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64'
+)
+
+function getStoredAttachmentPath(storageKey: string) {
+  return join(privateAttachmentStorageRoot, storageKey)
+}
+
+async function listStoredMedicalRecordItems() {
+  try {
+    return await readdir(medicalRecordAttachmentStorageRoot)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return []
+    }
+
+    throw error
+  }
+}
 
 async function createUser(email: string) {
   return User.create({
@@ -213,10 +245,20 @@ async function createAppointment({
 
 test.group('Medical records API', (group) => {
   group.each.setup(async () => {
+    await rm(medicalRecordAttachmentStorageRoot, {
+      recursive: true,
+      force: true,
+    })
+
     await truncateClinicSchemaTables()
     await seedAuthorizationCatalog()
 
     return async () => {
+      await rm(medicalRecordAttachmentStorageRoot, {
+        recursive: true,
+        force: true,
+      })
+
       await truncateClinicSchemaTables()
     }
   })
@@ -1115,5 +1157,347 @@ test.group('Medical records API', (group) => {
     const persistedOriginal = await MedicalRecordEntry.findOrFail(originalEntry.id)
 
     assert.equal(persistedOriginal.content, 'Entrada sujeita a correções concorrentes.')
+  })
+
+  test('uploads two private attachments and persists trusted metadata', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await createClinic('Clínica de Upload de Anexos')
+    const doctor = await createUser('attachments.upload.doctor@example.com')
+
+    await createMembership({
+      user: doctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Upload de Anexos')
+
+    const patientLink = await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dra. Upload de Anexos',
+      crmNumber: '98301',
+    })
+
+    const entry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      content: 'Entrada clínica destinada aos anexos.',
+    })
+
+    const token = await createToken(doctor)
+
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+      `/medical-record/entries/${entry.id}/attachments`
+
+    const response = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', validPdfBuffer, {
+        filename: 'resultado-laboratorial.pdf',
+        contentType: 'application/pdf',
+      })
+      .file('files[]', validPngBuffer, {
+        filename: 'imagem-clinica.png',
+        contentType: 'image/png',
+      })
+
+    response.assertStatus(201)
+
+    assert.equal(response.header('cache-control'), 'private, no-store')
+    assert.lengthOf(response.body().attachments, 2)
+
+    const attachments = await MedicalRecordAttachment.query()
+      .where('medical_record_entry_id', entry.id)
+      .orderBy('original_name', 'asc')
+
+    assert.lengthOf(attachments, 2)
+
+    const imageAttachment = attachments.find(
+      (attachment) => attachment.originalName === 'imagem-clinica.png'
+    )
+
+    const pdfAttachment = attachments.find(
+      (attachment) => attachment.originalName === 'resultado-laboratorial.pdf'
+    )
+
+    assert.exists(imageAttachment)
+    assert.exists(pdfAttachment)
+
+    assert.equal(pdfAttachment!.medicalRecordEntryId, entry.id)
+    assert.equal(pdfAttachment!.medicalRecordId, medicalRecord.id)
+    assert.equal(pdfAttachment!.patientId, patient.id)
+    assert.equal(pdfAttachment!.clinicId, clinic.id)
+    assert.equal(pdfAttachment!.uploadedByUserId, doctor.id)
+    assert.equal(pdfAttachment!.storageDisk, 'private_fs')
+    assert.equal(pdfAttachment!.contentType, 'application/pdf')
+    assert.equal(pdfAttachment!.sizeInBytes, validPdfBuffer.length)
+    assert.equal(pdfAttachment!.status, 'available')
+    assert.isNull(pdfAttachment!.statusReason)
+
+    assert.isTrue(
+      pdfAttachment!.storageKey.startsWith(
+        `medical-records/${medicalRecord.id}/entries/${entry.id}/`
+      )
+    )
+
+    assert.isTrue(pdfAttachment!.storageKey.endsWith('.pdf'))
+
+    assert.equal(pdfAttachment!.sha256, createHash('sha256').update(validPdfBuffer).digest('hex'))
+
+    assert.equal(imageAttachment!.contentType, 'image/png')
+    assert.equal(imageAttachment!.sizeInBytes, validPngBuffer.length)
+
+    assert.equal(imageAttachment!.sha256, createHash('sha256').update(validPngBuffer).digest('hex'))
+
+    const storedPdf = await readFile(getStoredAttachmentPath(pdfAttachment!.storageKey))
+
+    const storedImage = await readFile(getStoredAttachmentPath(imageAttachment!.storageKey))
+
+    assert.deepEqual(storedPdf, validPdfBuffer)
+    assert.deepEqual(storedImage, validPngBuffer)
+
+    for (const responseAttachment of response.body().attachments) {
+      assert.notProperty(responseAttachment, 'url')
+      assert.notProperty(responseAttachment, 'publicUrl')
+    }
+  })
+
+  test('requires attachment permission and restricts uploads to the entry origin clinic', async ({
+    client,
+    assert,
+  }) => {
+    const firstClinic = await createClinic('Primeira Clínica de Anexos')
+    const secondClinic = await createClinic('Segunda Clínica de Anexos')
+
+    const firstDoctor = await createUser('attachments.scope.first.doctor@example.com')
+
+    const secondDoctor = await createUser('attachments.scope.second.doctor@example.com')
+
+    const receptionist = await createUser('attachments.scope.receptionist@example.com')
+
+    await createMembership({
+      user: firstDoctor,
+      clinic: firstClinic,
+      roleCode: 'doctor',
+    })
+
+    await createMembership({
+      user: receptionist,
+      clinic: firstClinic,
+      roleCode: 'receptionist',
+    })
+
+    await createMembership({
+      user: secondDoctor,
+      clinic: secondClinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Isolamento de Anexos')
+
+    await createPatientLink({
+      patient,
+      clinic: firstClinic,
+    })
+
+    const secondPatientLink = await createPatientLink({
+      patient,
+      clinic: secondClinic,
+    })
+
+    const secondProfessionalLink = await createProfessionalLink({
+      clinic: secondClinic,
+      user: secondDoctor,
+      fullName: 'Dra. Origem do Anexo',
+      crmNumber: '98302',
+    })
+
+    const secondClinicEntry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic: secondClinic,
+      patientLink: secondPatientLink,
+      professionalLink: secondProfessionalLink,
+      author: secondDoctor,
+      content: 'Entrada criada no segundo consultório.',
+    })
+
+    const route =
+      `/api/v1/clinics/${firstClinic.id}/patients/${patient.id}` +
+      `/medical-record/entries/${secondClinicEntry.id}/attachments`
+
+    const unauthenticatedResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .file('files[]', validPdfBuffer, {
+        filename: 'sem-autenticacao.pdf',
+        contentType: 'application/pdf',
+      })
+
+    unauthenticatedResponse.assertStatus(401)
+
+    const receptionistToken = await createToken(receptionist)
+
+    const receptionistResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${receptionistToken}`)
+      .file('files[]', validPdfBuffer, {
+        filename: 'sem-permissao.pdf',
+        contentType: 'application/pdf',
+      })
+
+    receptionistResponse.assertStatus(403)
+
+    const firstDoctorToken = await createToken(firstDoctor)
+
+    const wrongOriginClinicResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${firstDoctorToken}`)
+      .file('files[]', validPdfBuffer, {
+        filename: 'clinica-incorreta.pdf',
+        contentType: 'application/pdf',
+      })
+
+    wrongOriginClinicResponse.assertStatus(404)
+
+    const attachments = await MedicalRecordAttachment.all()
+
+    assert.lengthOf(attachments, 0)
+
+    const storedItems = await listStoredMedicalRecordItems()
+
+    assert.lengthOf(storedItems, 0)
+  })
+
+  test('validates attachment quantity, extension, real type and size', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await createClinic('Clínica de Validação de Anexos')
+    const doctor = await createUser('attachments.validation.doctor@example.com')
+
+    await createMembership({
+      user: doctor,
+      clinic,
+      roleCode: 'doctor',
+    })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Validação de Anexos')
+
+    const patientLink = await createPatientLink({
+      patient,
+      clinic,
+    })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Validação de Anexos',
+      crmNumber: '98303',
+    })
+
+    const entry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      content: 'Entrada para validação dos arquivos.',
+    })
+
+    const token = await createToken(doctor)
+
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+      `/medical-record/entries/${entry.id}/attachments`
+
+    const missingFilesResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    missingFilesResponse.assertStatus(422)
+
+    const tooManyFilesResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', validPdfBuffer, {
+        filename: 'primeiro.pdf',
+        contentType: 'application/pdf',
+      })
+      .file('files[]', validPdfBuffer, {
+        filename: 'segundo.pdf',
+        contentType: 'application/pdf',
+      })
+      .file('files[]', validPdfBuffer, {
+        filename: 'terceiro.pdf',
+        contentType: 'application/pdf',
+      })
+
+    tooManyFilesResponse.assertStatus(422)
+
+    const invalidExtensionResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', Buffer.from('arquivo de texto'), {
+        filename: 'observacoes.txt',
+        contentType: 'text/plain',
+      })
+
+    invalidExtensionResponse.assertStatus(422)
+
+    const disguisedFileResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', Buffer.from('este conteúdo não é um PDF'), {
+        filename: 'arquivo-falso.pdf',
+        contentType: 'application/pdf',
+      })
+
+    disguisedFileResponse.assertStatus(422)
+
+    const oversizedPdfBuffer = Buffer.concat([
+      Buffer.from('%PDF-1.4\n'),
+      Buffer.alloc(10 * 1024 * 1024),
+    ])
+
+    const oversizedFileResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', oversizedPdfBuffer, {
+        filename: 'arquivo-grande.pdf',
+        contentType: 'application/pdf',
+      })
+
+    oversizedFileResponse.assertStatus(422)
+
+    const attachments = await MedicalRecordAttachment.all()
+
+    assert.lengthOf(attachments, 0)
+
+    const storedItems = await listStoredMedicalRecordItems()
+
+    assert.lengthOf(storedItems, 0)
   })
 })

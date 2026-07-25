@@ -12,6 +12,8 @@ const ProfessionalSchedulesController = () =>
   import('#controllers/professional_schedules_controller')
 const AppointmentsController = () => import('#controllers/appointments_controller')
 const MedicalRecordsController = () => import('#controllers/medical_records_controller')
+const MedicalRecordAttachmentsController = () =>
+  import('#controllers/medical_record_attachments_controller')
 
 router.get('/', async () => {
   return {
@@ -195,6 +197,12 @@ router
     router.post('/entries/:entryId/corrections', [MedicalRecordsController, 'correctEntry']).use(
       middleware.clinicPermission({
         permissions: ['patients.read', 'medical_records.correct'],
+      })
+    )
+
+    router.post('/entries/:entryId/attachments', [MedicalRecordAttachmentsController, 'store']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'attachments.upload'],
       })
     )
   })

@@ -34,7 +34,9 @@ const bodyParserConfig = defineConfig({
    * File uploads are handled by the multipart parser.
    */
   multipart: {
-    autoProcess: true,
+    autoProcess: [
+      '/api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments',
+    ],
     convertEmptyStringsToNull: true,
     processManually: [],
     limit: '25mb',
