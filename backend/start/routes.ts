@@ -200,6 +200,23 @@ router
       })
     )
 
+    router.get('/entries/:entryId/attachments', [MedicalRecordAttachmentsController, 'index']).use(
+      middleware.clinicPermission({
+        permissions: ['patients.read', 'attachments.read'],
+      })
+    )
+
+    router
+      .get('/entries/:entryId/attachments/:attachmentId/download', [
+        MedicalRecordAttachmentsController,
+        'download',
+      ])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['patients.read', 'attachments.read'],
+        })
+      )
+
     router.post('/entries/:entryId/attachments', [MedicalRecordAttachmentsController, 'store']).use(
       middleware.clinicPermission({
         permissions: ['patients.read', 'attachments.upload'],
@@ -210,6 +227,7 @@ router
   .where('clinicId', router.matchers.uuid())
   .where('patientId', router.matchers.uuid())
   .where('entryId', router.matchers.uuid())
+  .where('attachmentId', router.matchers.uuid())
   .use(
     middleware.auth({
       guards: ['api'],
