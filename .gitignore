@@ -6,7 +6,8 @@ build/
 .next/
 coverage/
 tmp/
-storage/uploads/
+backend/storage/uploads/
+backend/storage/private/
 *.log
 .DS_Store
 Thumbs.db
