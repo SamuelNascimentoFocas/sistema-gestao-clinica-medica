@@ -4,6 +4,7 @@ import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import Patient from '#models/patient'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAccessLog from '#models/medical_record_access_log'
+import MedicalRecordAttachment from '#models/medical_record_attachment'
 
 export default class MedicalRecord extends BaseModel {
   static table = 'clinic.medical_records'
@@ -38,4 +39,9 @@ export default class MedicalRecord extends BaseModel {
     foreignKey: 'medicalRecordId',
   })
   declare accessLogs: HasMany<typeof MedicalRecordAccessLog>
+
+  @hasMany(() => MedicalRecordAttachment, {
+    foreignKey: 'medicalRecordId',
+  })
+  declare attachments: HasMany<typeof MedicalRecordAttachment>
 }

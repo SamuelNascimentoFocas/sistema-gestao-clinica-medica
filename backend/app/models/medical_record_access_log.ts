@@ -6,8 +6,10 @@ import Patient from '#models/patient'
 import Clinic from '#models/clinic'
 import PatientClinic from '#models/patient_clinic'
 import User from '#models/user'
+import MedicalRecordAttachment from '#models/medical_record_attachment'
 
-export type MedicalRecordAccessAction = 'view_timeline' | 'view_entry'
+export type MedicalRecordAccessAction =
+  'view_timeline' | 'view_entry' | 'list_attachments' | 'download_attachment'
 
 export type MedicalRecordAccessPurpose =
   'patient_care' | 'care_coordination' | 'legal_obligation' | 'other'
@@ -32,6 +34,9 @@ export default class MedicalRecordAccessLog extends BaseModel {
 
   @column({ columnName: 'user_id' })
   declare userId: string
+
+  @column({ columnName: 'medical_record_attachment_id' })
+  declare medicalRecordAttachmentId: string | null
 
   @column({ columnName: 'access_action' })
   declare accessAction: MedicalRecordAccessAction
@@ -72,4 +77,9 @@ export default class MedicalRecordAccessLog extends BaseModel {
     foreignKey: 'userId',
   })
   declare user: BelongsTo<typeof User>
+
+  @belongsTo(() => MedicalRecordAttachment, {
+    foreignKey: 'medicalRecordAttachmentId',
+  })
+  declare medicalRecordAttachment: BelongsTo<typeof MedicalRecordAttachment>
 }

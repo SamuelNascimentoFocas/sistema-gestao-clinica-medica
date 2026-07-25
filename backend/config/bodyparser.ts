@@ -34,20 +34,12 @@ const bodyParserConfig = defineConfig({
    * File uploads are handled by the multipart parser.
    */
   multipart: {
-    /**
-     * Enabling auto process allows bodyparser middleware to
-     * move all uploaded files inside the tmp folder of your
-     * operating system
-     */
-    autoProcess: true,
+    autoProcess: [
+      '/api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments',
+    ],
     convertEmptyStringsToNull: true,
     processManually: [],
-
-    /**
-     * Maximum limit of data to parse including all files
-     * and fields
-     */
-    limit: '20mb',
+    limit: '25mb',
     types: ['multipart/form-data'],
   },
 })

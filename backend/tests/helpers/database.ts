@@ -5,6 +5,7 @@ export async function truncateClinicSchemaTables() {
     TRUNCATE TABLE
       clinic.auth_access_tokens,
       clinic.medical_record_access_logs,
+      clinic.medical_record_attachments,
       clinic.medical_record_entries,
       clinic.appointments,
       clinic.professional_schedule_blocks,

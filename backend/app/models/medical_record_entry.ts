@@ -8,6 +8,7 @@ import PatientClinic from '#models/patient_clinic'
 import ClinicProfessional from '#models/clinic_professional'
 import Appointment from '#models/appointment'
 import User from '#models/user'
+import MedicalRecordAttachment from '#models/medical_record_attachment'
 
 export type MedicalRecordEntryType = 'consultation' | 'evolution' | 'correction' | 'other'
 
@@ -97,4 +98,9 @@ export default class MedicalRecordEntry extends BaseModel {
     foreignKey: 'correctsEntryId',
   })
   declare corrections: HasMany<typeof MedicalRecordEntry>
+
+  @hasMany(() => MedicalRecordAttachment, {
+    foreignKey: 'medicalRecordEntryId',
+  })
+  declare attachments: HasMany<typeof MedicalRecordAttachment>
 }
