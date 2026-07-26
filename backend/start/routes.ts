@@ -15,6 +15,7 @@ const MedicalRecordsController = () => import('#controllers/medical_records_cont
 const MedicalRecordAttachmentsController = () =>
   import('#controllers/medical_record_attachments_controller')
 const UserClinicsController = () => import('#controllers/user_clinics_controller')
+const ClinicMembersController = () => import('#controllers/clinic_members_controller')
 
 router.get('/', async () => {
   return {
@@ -132,6 +133,56 @@ router
   .use(
     middleware.clinicPermission({
       permissions: ['users.read'],
+    })
+  )
+
+router
+  .post('/api/v1/clinics/:clinicId/members', [ClinicMembersController, 'store'])
+  .where('clinicId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+  .use(
+    middleware.clinicPermission({
+      permissions: ['users.create', 'users.assign_role'],
+    })
+  )
+
+router
+  .patch('/api/v1/clinics/:clinicId/members/:membershipId/role', [
+    ClinicMembersController,
+    'updateRole',
+  ])
+  .where('clinicId', router.matchers.uuid())
+  .where('membershipId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+  .use(
+    middleware.clinicPermission({
+      permissions: ['users.assign_role'],
+    })
+  )
+
+router
+  .patch('/api/v1/clinics/:clinicId/members/:membershipId/status', [
+    ClinicMembersController,
+    'updateStatus',
+  ])
+  .where('clinicId', router.matchers.uuid())
+  .where('membershipId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+  .use(
+    middleware.clinicPermission({
+      permissions: ['users.deactivate'],
     })
   )
 

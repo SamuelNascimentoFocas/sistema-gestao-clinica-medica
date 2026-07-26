@@ -6,6 +6,7 @@ import {
   updateUserStatusValidator,
   updateUserValidator,
 } from '#validators/user'
+import { isUserLastActiveClinicAdmin } from '#services/clinic_membership_rules'
 
 async function emailAlreadyExists(emailNormalized: string, exceptUserId?: string) {
   const query = User.query().where('email_normalized', emailNormalized)
@@ -174,6 +175,12 @@ export default class UsersController {
     if (!isActive && user.isGlobalAdmin) {
       return response.conflict({
         message: 'Um Administrador Geral não pode ser inativado por esta rota',
+      })
+    }
+
+    if (!isActive && (await isUserLastActiveClinicAdmin(user.id))) {
+      return response.conflict({
+        message: 'O último Administrador de Consultório ativo não pode ter seu usuário inativado',
       })
     }
 
