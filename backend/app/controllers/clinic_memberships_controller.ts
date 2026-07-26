@@ -9,6 +9,7 @@ import {
   updateClinicMembershipStatusValidator,
   updateClinicMembershipValidator,
 } from '#validators/clinic_membership'
+import { isLastActiveClinicAdmin } from '#services/clinic_membership_rules'
 
 async function loadRelations(membership: UserClinicRole) {
   await membership.load('user')
@@ -153,7 +154,7 @@ export default class ClinicMembershipsController {
   }
 
   async update({ params, request, response }: HttpContext) {
-    const membership = await UserClinicRole.find(params.id)
+    const membership = await UserClinicRole.query().where('id', params.id).preload('role').first()
 
     if (!membership) {
       return response.notFound({
@@ -174,6 +175,16 @@ export default class ClinicMembershipsController {
     if (!role.isActive) {
       return response.conflict({
         message: 'Não é possível atribuir um perfil inativo',
+      })
+    }
+
+    if (
+      role.code !== 'clinic_admin' &&
+      membership.role.code === 'clinic_admin' &&
+      (await isLastActiveClinicAdmin(membership))
+    ) {
+      return response.conflict({
+        message: 'O último Administrador de Consultório ativo não pode ter seu perfil alterado',
       })
     }
 
@@ -201,6 +212,17 @@ export default class ClinicMembershipsController {
     }
 
     const { isActive } = await request.validateUsing(updateClinicMembershipStatusValidator)
+
+    if (
+      !isActive &&
+      membership.isActive &&
+      membership.role.code === 'clinic_admin' &&
+      (await isLastActiveClinicAdmin(membership))
+    ) {
+      return response.conflict({
+        message: 'O último Administrador de Consultório ativo não pode ser inativado',
+      })
+    }
 
     if (isActive) {
       if (membership.user.isGlobalAdmin) {
