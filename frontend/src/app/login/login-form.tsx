@@ -55,7 +55,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.replace("/dashboard");
+      router.replace("/clinics");
       router.refresh();
     } catch {
       setErrorMessage(

@@ -14,6 +14,7 @@ const AppointmentsController = () => import('#controllers/appointments_controlle
 const MedicalRecordsController = () => import('#controllers/medical_records_controller')
 const MedicalRecordAttachmentsController = () =>
   import('#controllers/medical_record_attachments_controller')
+const UserClinicsController = () => import('#controllers/user_clinics_controller')
 
 router.get('/', async () => {
   return {
@@ -30,6 +31,7 @@ router
 
 router
   .group(() => {
+    router.get('/me/clinics', [UserClinicsController, 'index'])
     router.get('/me', [SessionsController, 'show'])
     router.delete('/logout', [SessionsController, 'destroy'])
   })
