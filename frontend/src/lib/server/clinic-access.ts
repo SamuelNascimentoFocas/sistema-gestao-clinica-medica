@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type {
   AccessibleClinic,
   AccessibleClinicsResponse,
@@ -47,44 +48,46 @@ export async function getAccessibleClinics(): Promise<
   return (body as AccessibleClinicsResponse).data;
 }
 
-export async function getClinicContext(
-  clinicId: string,
-): Promise<ClinicContext | null> {
-  const token = await getSessionToken();
+export const getClinicContext = cache(
+  async function getClinicContext(
+    clinicId: string,
+  ): Promise<ClinicContext | null> {
+    const token = await getSessionToken();
 
-  if (!token) {
-    return null;
-  }
+    if (!token) {
+      return null;
+    }
 
-  const response = await backendApiFetch(
-    `/api/v1/clinics/${encodeURIComponent(clinicId)}/context`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await backendApiFetch(
+      `/api/v1/clinics/${encodeURIComponent(clinicId)}/context`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    },
-  );
-
-  if ([401, 403, 404].includes(response.status)) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `Não foi possível carregar o contexto da clínica: ${response.status}`,
     );
-  }
 
-  const body = await readBackendResponse(response);
+    if ([401, 403, 404].includes(response.status)) {
+      return null;
+    }
 
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    typeof (body as { clinic?: unknown }).clinic !== "object" ||
-    typeof (body as { access?: unknown }).access !== "object"
-  ) {
-    throw new Error("O backend retornou um contexto de clínica inválido");
-  }
+    if (!response.ok) {
+      throw new Error(
+        `Não foi possível carregar o contexto da clínica: ${response.status}`,
+      );
+    }
 
-  return body as ClinicContext;
-}
+    const body = await readBackendResponse(response);
+
+    if (
+      typeof body !== "object" ||
+      body === null ||
+      typeof (body as { clinic?: unknown }).clinic !== "object" ||
+      typeof (body as { access?: unknown }).access !== "object"
+    ) {
+      throw new Error("O backend retornou um contexto de clínica inválido");
+    }
+
+    return body as ClinicContext;
+  },
+);

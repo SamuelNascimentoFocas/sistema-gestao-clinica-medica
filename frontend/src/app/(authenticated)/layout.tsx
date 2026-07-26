@@ -18,7 +18,7 @@ export default async function AuthenticatedLayout({
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/40">
-      <header className="border-b bg-background">
+      <header className="sticky top-0 z-40 border-b bg-background">
         <div className="mx-auto flex min-h-16 w-full max-w-7xl items-center justify-between gap-4 px-6">
           <div>
             <p className="font-semibold">Sistema da Clínica</p>
