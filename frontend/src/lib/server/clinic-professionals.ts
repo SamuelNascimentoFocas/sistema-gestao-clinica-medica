@@ -7,8 +7,14 @@ import {
   readBackendResponse,
 } from "@/lib/server/backend-api";
 
+type GetClinicProfessionalsOptions = {
+  page?: number;
+  perPage?: number;
+};
+
 export async function getClinicProfessionals(
   clinicId: string,
+  options: GetClinicProfessionalsOptions = {},
 ): Promise<ProfessionalLinksResponse | null> {
   const token = await getSessionToken();
 
@@ -16,10 +22,13 @@ export async function getClinicProfessionals(
     return null;
   }
 
+  const page = options.page ?? 1;
+  const perPage = options.perPage ?? 20;
+
   const response = await backendApiFetch(
     `/api/v1/clinics/${encodeURIComponent(
       clinicId,
-    )}/professionals?page=1&perPage=20`,
+    )}/professionals?page=${page}&perPage=${perPage}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -43,8 +52,7 @@ export async function getClinicProfessionals(
     typeof body !== "object" ||
     body === null ||
     !Array.isArray((body as { data?: unknown }).data) ||
-    typeof (body as { meta?: unknown }).meta !==
-      "object" ||
+    typeof (body as { meta?: unknown }).meta !== "object" ||
     (body as { meta?: unknown }).meta === null
   ) {
     throw new Error(
