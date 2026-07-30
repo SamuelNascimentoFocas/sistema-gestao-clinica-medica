@@ -7,8 +7,14 @@ import {
   readBackendResponse,
 } from "@/lib/server/backend-api";
 
+type GetClinicPatientsOptions = {
+  page?: number;
+  perPage?: number;
+};
+
 export async function getClinicPatients(
   clinicId: string,
+  options: GetClinicPatientsOptions = {},
 ): Promise<PatientLinksResponse | null> {
   const token = await getSessionToken();
 
@@ -16,10 +22,13 @@ export async function getClinicPatients(
     return null;
   }
 
+  const page = options.page ?? 1;
+  const perPage = options.perPage ?? 20;
+
   const response = await backendApiFetch(
     `/api/v1/clinics/${encodeURIComponent(
       clinicId,
-    )}/patients?page=1&perPage=20`,
+    )}/patients?page=${page}&perPage=${perPage}`,
     {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -43,7 +52,8 @@ export async function getClinicPatients(
     typeof body !== "object" ||
     body === null ||
     !Array.isArray((body as { data?: unknown }).data) ||
-    typeof (body as { meta?: unknown }).meta !== "object" ||
+    typeof (body as { meta?: unknown }).meta !==
+      "object" ||
     (body as { meta?: unknown }).meta === null
   ) {
     throw new Error(
