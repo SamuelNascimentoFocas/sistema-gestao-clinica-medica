@@ -14,6 +14,7 @@ const AppointmentsController = () => import('#controllers/appointments_controlle
 const MedicalRecordsController = () => import('#controllers/medical_records_controller')
 const MedicalRecordAttachmentsController = () =>
   import('#controllers/medical_record_attachments_controller')
+const AuditLogsController = () => import('#controllers/audit_logs_controller')
 const UserClinicsController = () => import('#controllers/user_clinics_controller')
 const ClinicMembersController = () => import('#controllers/clinic_members_controller')
 
@@ -517,6 +518,22 @@ router
   .prefix('/api/v1/clinics/:clinicId/appointments')
   .where('clinicId', router.matchers.uuid())
   .where('appointmentId', router.matchers.uuid())
+  .use(
+    middleware.auth({
+      guards: ['api'],
+    })
+  )
+
+router
+  .group(() => {
+    router.get('/', [AuditLogsController, 'index']).use(
+      middleware.clinicPermission({
+        permissions: ['audit_logs.read'],
+      })
+    )
+  })
+  .prefix('/api/v1/clinics/:clinicId/audit-logs')
+  .where('clinicId', router.matchers.uuid())
   .use(
     middleware.auth({
       guards: ['api'],
