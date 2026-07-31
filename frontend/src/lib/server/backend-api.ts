@@ -13,9 +13,15 @@ function getBackendApiUrl() {
 export async function backendApiFetch(path: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
 
-  headers.set('Accept', JSON_CONTENT_TYPE)
+  if (!headers.has('Accept')) {
+    headers.set('Accept', JSON_CONTENT_TYPE)
+  }
 
-  if (init.body && !headers.has('Content-Type')) {
+  if (
+    init.body &&
+    !headers.has('Content-Type') &&
+    !(init.body instanceof FormData)
+  ) {
     headers.set('Content-Type', JSON_CONTENT_TYPE)
   }
 
