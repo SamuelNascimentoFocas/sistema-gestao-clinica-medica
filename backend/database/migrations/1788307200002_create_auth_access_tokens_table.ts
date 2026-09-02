@@ -1,20 +1,15 @@
 import { BaseSchema } from '@adonisjs/lucid/schema'
 
 export default class extends BaseSchema {
-  protected schemaName = 'clinic'
-  protected tableName = 'auth_access_tokens'
-
   async up() {
-    this.schema.withSchema(this.schemaName).createTable(this.tableName, (table) => {
+    this.schema.withSchema('clinic').createTable('auth_access_tokens', (table) => {
       table.increments('id')
-
       table
         .uuid('tokenable_id')
         .notNullable()
         .references('id')
         .inTable('clinic.users')
         .onDelete('CASCADE')
-
       table.string('type').notNullable()
       table.string('name').nullable()
       table.string('hash').notNullable()
@@ -31,6 +26,6 @@ export default class extends BaseSchema {
   }
 
   async down() {
-    this.schema.withSchema(this.schemaName).dropTable(this.tableName)
+    this.schema.withSchema('clinic').dropTable('auth_access_tokens')
   }
 }
