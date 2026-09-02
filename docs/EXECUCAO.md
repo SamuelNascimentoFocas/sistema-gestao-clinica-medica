@@ -182,7 +182,13 @@ O banco de testes deve permanecer separado do banco de desenvolvimento.
 
 ## 7. Executar migrations
 
-Ainda dentro de `backend`:
+Esta sequência destina-se a uma instalação nova, em banco vazio. A baseline
+granular substitui as migrations anteriores; um banco com registros antigos em
+`adonis_schema` não é atualizado automaticamente. Não use `migration:run`, reset
+ou fresh para tentar reconciliar esse histórico. Preserve os bancos existentes e
+consulte [MIGRATIONS.md](MIGRATIONS.md) antes de escolher uma estratégia.
+
+Ainda dentro de `backend`, após confirmar o banco de destino:
 
 ```cmd
 node ace migration:run

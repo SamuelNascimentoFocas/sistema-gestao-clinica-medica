@@ -553,19 +553,17 @@ O projeto usa PostgreSQL e um schema dedicado:
 clinic
 ```
 
-As migrations criam 11 etapas principais:
+As migrations estão organizadas em uma baseline granular de 25 etapas: guarda
+de linhagem (somente leitura, antes das operações estruturais), schema,
+18 tabelas (uma por migration), extensão `btree_gist`, exclusion constraint,
+função de imutabilidade e dois triggers separados. Constraints e índices comuns
+ficam junto à tabela que os possui e usam Schema/Table Builder. As regras que
+antes eram acrescentadas por migrations posteriores estão incorporadas à
+definição final de cada tabela.
 
-1. schema;
-2. usuários;
-3. access tokens;
-4. clínicas e autorização;
-5. pacientes e prontuários;
-6. profissionais e agendas;
-7. agendamentos;
-8. prevenção de sobreposição;
-9. entradas clínicas e logs;
-10. fortalecimento das constraints clínicas;
-11. anexos clínicos.
+A ordem completa, as exceções de SQL raw e os cuidados com bancos que usam o
+histórico anterior estão em [MIGRATIONS.md](MIGRATIONS.md). A reorganização não é
+uma migration incremental para bancos já populados.
 
 ### Responsabilidade do banco
 

@@ -138,7 +138,10 @@ node ace generate:key
 
 Confirme que `APP_KEY` está preenchida no arquivo `backend/.env`.
 
-Execute as migrations:
+Execute as migrations somente em um banco novo e vazio. A baseline granular substitui
+os nomes das migrations anteriores; não a execute sobre um banco com o histórico
+antigo. Consulte [Baseline de migrations](docs/MIGRATIONS.md) antes de reutilizar
+qualquer banco existente.
 
 ```cmd
 node ace migration:run

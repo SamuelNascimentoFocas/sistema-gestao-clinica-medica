@@ -12,6 +12,10 @@ Inventário das 59 rotas do backend, autenticação, autorização, permissões 
 
 Guia completo para preparar o PostgreSQL, configurar variáveis de ambiente, instalar dependências, executar migrations e iniciar backend e frontend.
 
+### [MIGRATIONS.md](MIGRATIONS.md)
+
+Baseline granular, ordem de dependências, justificativas do SQL específico do PostgreSQL, comparação reproduzível e proteção de bancos com o histórico anterior.
+
 ### [CENARIO_DEMONSTRATIVO.md](CENARIO_DEMONSTRATIVO.md)
 
 Descrição do seeder demonstrativo, dados criados, credenciais locais, execução idempotente e roteiro de apresentação.
