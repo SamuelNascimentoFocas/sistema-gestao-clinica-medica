@@ -51,517 +51,395 @@ router.get('/', async () => {
 
 router
   .group(() => {
-    router.post('/login', [SessionsController, 'store'])
+    // Login permanece público.
+    router
+      .group(() => {
+        router.post('/login', [SessionsController, 'store'])
+      })
+      .prefix('/auth')
+
+    // Todas as demais rotas da API exigem autenticação.
+    router
+      .group(() => {
+        router
+          .group(() => {
+            router.get('/me/clinics', [UserClinicsController, 'index'])
+            router.get('/me', [SessionsController, 'show'])
+            router.delete('/logout', [SessionsController, 'destroy'])
+          })
+          .prefix('/auth')
+
+        // Administração global: somente os três recursos administrativos.
+        router
+          .group(() => {
+            router
+              .group(() => {
+                router.get('/', [ClinicsController, 'index'])
+                router.post('/', [ClinicsController, 'store'])
+
+                router.get('/:id', [ClinicsController, 'show']).where('id', router.matchers.uuid())
+
+                router
+                  .patch('/:id', [ClinicsController, 'update'])
+                  .where('id', router.matchers.uuid())
+
+                router
+                  .patch('/:id/status', [ClinicStatusController, 'updateStatus'])
+                  .where('id', router.matchers.uuid())
+              })
+              .prefix('/clinics')
+
+            router
+              .group(() => {
+                router.get('/', [UsersController, 'index'])
+                router.post('/', [UsersController, 'store'])
+
+                router.get('/:id', [UsersController, 'show']).where('id', router.matchers.uuid())
+
+                router
+                  .patch('/:id', [UsersController, 'update'])
+                  .where('id', router.matchers.uuid())
+
+                router
+                  .patch('/:id/status', [UserStatusController, 'updateStatus'])
+                  .where('id', router.matchers.uuid())
+              })
+              .prefix('/users')
+
+            router
+              .group(() => {
+                router.get('/', [ClinicMembershipsController, 'index'])
+                router.post('/', [ClinicMembershipsController, 'store'])
+
+                router
+                  .get('/:id', [ClinicMembershipsController, 'show'])
+                  .where('id', router.matchers.uuid())
+
+                router
+                  .patch('/:id', [ClinicMembershipsController, 'update'])
+                  .where('id', router.matchers.uuid())
+
+                router
+                  .patch('/:id/status', [ClinicMembershipStatusController, 'updateStatus'])
+                  .where('id', router.matchers.uuid())
+              })
+              .prefix('/clinic-memberships')
+          })
+          .use(middleware.globalAdmin())
+
+        // Contexto clínico: permissões específicas permanecem em cada módulo/rota.
+        router
+          .group(() => {
+            router.get('/context', [ClinicContextsController, 'show']).use(
+              middleware.clinicPermission({
+                permissions: ['clinics.read'],
+              })
+            )
+
+            router.get('/members', [ClinicMembersController, 'index']).use(
+              middleware.clinicPermission({
+                permissions: ['users.read'],
+              })
+            )
+
+            router.post('/members', [ClinicMembersController, 'store']).use(
+              middleware.clinicPermission({
+                permissions: ['users.create', 'users.assign_role'],
+              })
+            )
+
+            router
+              .patch('/members/:membershipId/role', [ClinicMemberAccessController, 'updateRole'])
+              .where('membershipId', router.matchers.uuid())
+              .use(
+                middleware.clinicPermission({
+                  permissions: ['users.assign_role'],
+                })
+              )
+
+            router
+              .patch('/members/:membershipId/status', [
+                ClinicMemberAccessController,
+                'updateStatus',
+              ])
+              .where('membershipId', router.matchers.uuid())
+              .use(
+                middleware.clinicPermission({
+                  permissions: ['users.deactivate'],
+                })
+              )
+
+            router
+              .group(() => {
+                router.get('/', [PatientsController, 'index']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.read'],
+                  })
+                )
+
+                router.post('/', [PatientsController, 'store']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.create'],
+                  })
+                )
+
+                router.get('/:patientId', [PatientsController, 'show']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.read'],
+                  })
+                )
+
+                router.patch('/:patientId', [PatientsController, 'update']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.update'],
+                  })
+                )
+
+                router
+                  .patch('/:patientId/status', [PatientLinkStatusController, 'updateStatus'])
+                  .use(
+                    middleware.clinicPermission({
+                      permissions: ['patients.update'],
+                    })
+                  )
+              })
+              .prefix('/patients')
+              .where('patientId', router.matchers.uuid())
+
+            router
+              .group(() => {
+                router.get('/', [MedicalRecordsController, 'show']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.read', 'medical_records.read'],
+                  })
+                )
+
+                router.post('/entries', [MedicalRecordEntriesController, 'store']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.read', 'medical_records.create'],
+                  })
+                )
+
+                router.get('/entries/:entryId', [MedicalRecordEntriesController, 'show']).use(
+                  middleware.clinicPermission({
+                    permissions: ['patients.read', 'medical_records.read'],
+                  })
+                )
+
+                router
+                  .post('/entries/:entryId/corrections', [
+                    MedicalRecordCorrectionsController,
+                    'correct',
+                  ])
+                  .use(
+                    middleware.clinicPermission({
+                      permissions: ['patients.read', 'medical_records.correct'],
+                    })
+                  )
+
+                router
+                  .get('/entries/:entryId/attachments', [
+                    MedicalRecordAttachmentsController,
+                    'index',
+                  ])
+                  .use(
+                    middleware.clinicPermission({
+                      permissions: ['patients.read', 'attachments.read'],
+                    })
+                  )
+
+                router
+                  .get('/entries/:entryId/attachments/:attachmentId/download', [
+                    MedicalRecordAttachmentDownloadsController,
+                    'download',
+                  ])
+                  .use(
+                    middleware.clinicPermission({
+                      permissions: ['patients.read', 'attachments.read'],
+                    })
+                  )
+
+                router
+                  .post('/entries/:entryId/attachments', [
+                    MedicalRecordAttachmentsController,
+                    'store',
+                  ])
+                  .use(
+                    middleware.clinicPermission({
+                      permissions: ['patients.read', 'attachments.upload'],
+                    })
+                  )
+              })
+              .prefix('/patients/:patientId/medical-record')
+              .where('patientId', router.matchers.uuid())
+              .where('entryId', router.matchers.uuid())
+              .where('attachmentId', router.matchers.uuid())
+
+            router
+              .group(() => {
+                router.get('/', [ProfessionalsController, 'index']).use(
+                  middleware.clinicPermission({
+                    permissions: ['professionals.read'],
+                  })
+                )
+
+                router.post('/', [ProfessionalsController, 'store']).use(
+                  middleware.clinicPermission({
+                    permissions: ['professionals.create'],
+                  })
+                )
+
+                router.get('/:professionalId', [ProfessionalsController, 'show']).use(
+                  middleware.clinicPermission({
+                    permissions: ['professionals.read'],
+                  })
+                )
+
+                router.patch('/:professionalId', [ProfessionalsController, 'update']).use(
+                  middleware.clinicPermission({
+                    permissions: ['professionals.update'],
+                  })
+                )
+
+                router
+                  .patch('/:professionalId/status', [
+                    ProfessionalLinkStatusController,
+                    'updateStatus',
+                  ])
+                  .use(
+                    middleware.clinicPermission({
+                      permissions: ['professionals.update'],
+                    })
+                  )
+              })
+              .prefix('/professionals')
+              .where('professionalId', router.matchers.uuid())
+
+            router
+              .group(() => {
+                router.get('/schedule', [ProfessionalSchedulesController, 'show'])
+
+                router
+                  .post('/weekly-availabilities', [
+                    ProfessionalWeeklyAvailabilitiesController,
+                    'store',
+                  ])
+                  .use(middleware.scheduleManagement())
+
+                router
+                  .patch('/weekly-availabilities/:availabilityId', [
+                    ProfessionalWeeklyAvailabilitiesController,
+                    'update',
+                  ])
+                  .use(middleware.scheduleManagement())
+
+                router
+                  .patch('/weekly-availabilities/:availabilityId/status', [
+                    ProfessionalScheduleStatusController,
+                    'updateWeeklyAvailabilityStatus',
+                  ])
+                  .use(middleware.scheduleManagement())
+
+                router
+                  .post('/schedule-blocks', [ProfessionalScheduleBlocksController, 'store'])
+                  .use(middleware.scheduleManagement())
+
+                router
+                  .patch('/schedule-blocks/:blockId', [
+                    ProfessionalScheduleBlocksController,
+                    'update',
+                  ])
+                  .use(middleware.scheduleManagement())
+
+                router
+                  .patch('/schedule-blocks/:blockId/status', [
+                    ProfessionalScheduleStatusController,
+                    'updateScheduleBlockStatus',
+                  ])
+                  .use(middleware.scheduleManagement())
+              })
+              .prefix('/professionals/:professionalId')
+              .where('professionalId', router.matchers.uuid())
+              .where('availabilityId', router.matchers.uuid())
+              .where('blockId', router.matchers.uuid())
+              .use(middleware.clinicPermission({ permissions: ['schedules.read'] }))
+
+            router
+              .group(() => {
+                router.get('/', [AppointmentsController, 'index'])
+
+                router.post('/', [AppointmentsController, 'store']).use(
+                  middleware.appointmentManagement({
+                    action: 'create',
+                  })
+                )
+
+                router.get('/:appointmentId', [AppointmentsController, 'show'])
+
+                router.patch('/:appointmentId', [AppointmentsController, 'update']).use(
+                  middleware.appointmentManagement({
+                    action: 'update',
+                  })
+                )
+
+                router
+                  .post('/:appointmentId/confirm', [AppointmentStatusController, 'confirm'])
+                  .use(
+                    middleware.appointmentManagement({
+                      action: 'changeStatus',
+                    })
+                  )
+
+                router.post('/:appointmentId/cancel', [AppointmentStatusController, 'cancel']).use(
+                  middleware.appointmentManagement({
+                    action: 'changeStatus',
+                  })
+                )
+
+                router
+                  .post('/:appointmentId/complete', [AppointmentStatusController, 'complete'])
+                  .use(
+                    middleware.appointmentManagement({
+                      action: 'changeStatus',
+                    })
+                  )
+
+                router
+                  .post('/:appointmentId/no-show', [AppointmentStatusController, 'markNoShow'])
+                  .use(
+                    middleware.appointmentManagement({
+                      action: 'changeStatus',
+                    })
+                  )
+
+                router
+                  .post('/:appointmentId/reschedule', [
+                    AppointmentReschedulingController,
+                    'reschedule',
+                  ])
+                  .use(
+                    middleware.appointmentManagement({
+                      action: 'reschedule',
+                    })
+                  )
+              })
+              .prefix('/appointments')
+              .where('appointmentId', router.matchers.uuid())
+              .use(middleware.clinicPermission({ permissions: ['appointments.read'] }))
+
+            router
+              .group(() => {
+                router.get('/', [AuditLogsController, 'index']).use(
+                  middleware.clinicPermission({
+                    permissions: ['audit_logs.read'],
+                  })
+                )
+              })
+              .prefix('/audit-logs')
+          })
+          .prefix('/clinics/:clinicId')
+          .where('clinicId', router.matchers.uuid())
+      })
+      .use(middleware.auth({ guards: ['api'] }))
   })
-  .prefix('/api/v1/auth')
-
-router
-  .group(() => {
-    router.get('/me/clinics', [UserClinicsController, 'index'])
-    router.get('/me', [SessionsController, 'show'])
-    router.delete('/logout', [SessionsController, 'destroy'])
-  })
-  .prefix('/api/v1/auth')
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/', [ClinicsController, 'index'])
-    router.post('/', [ClinicsController, 'store'])
-
-    router.get('/:id', [ClinicsController, 'show']).where('id', router.matchers.uuid())
-
-    router.patch('/:id', [ClinicsController, 'update']).where('id', router.matchers.uuid())
-
-    router
-      .patch('/:id/status', [ClinicStatusController, 'updateStatus'])
-      .where('id', router.matchers.uuid())
-  })
-  .prefix('/api/v1/clinics')
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(middleware.globalAdmin())
-
-router
-  .group(() => {
-    router.get('/', [UsersController, 'index'])
-    router.post('/', [UsersController, 'store'])
-
-    router.get('/:id', [UsersController, 'show']).where('id', router.matchers.uuid())
-
-    router.patch('/:id', [UsersController, 'update']).where('id', router.matchers.uuid())
-
-    router
-      .patch('/:id/status', [UserStatusController, 'updateStatus'])
-      .where('id', router.matchers.uuid())
-  })
-  .prefix('/api/v1/users')
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(middleware.globalAdmin())
-
-router
-  .group(() => {
-    router.get('/', [ClinicMembershipsController, 'index'])
-    router.post('/', [ClinicMembershipsController, 'store'])
-
-    router.get('/:id', [ClinicMembershipsController, 'show']).where('id', router.matchers.uuid())
-
-    router
-      .patch('/:id', [ClinicMembershipsController, 'update'])
-      .where('id', router.matchers.uuid())
-
-    router
-      .patch('/:id/status', [ClinicMembershipStatusController, 'updateStatus'])
-      .where('id', router.matchers.uuid())
-  })
-  .prefix('/api/v1/clinic-memberships')
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(middleware.globalAdmin())
-
-router
-  .get('/api/v1/clinics/:clinicId/context', [ClinicContextsController, 'show'])
-  .where('clinicId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(
-    middleware.clinicPermission({
-      permissions: ['clinics.read'],
-    })
-  )
-
-router
-  .get('/api/v1/clinics/:clinicId/members', [ClinicMembersController, 'index'])
-  .where('clinicId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(
-    middleware.clinicPermission({
-      permissions: ['users.read'],
-    })
-  )
-
-router
-  .post('/api/v1/clinics/:clinicId/members', [ClinicMembersController, 'store'])
-  .where('clinicId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(
-    middleware.clinicPermission({
-      permissions: ['users.create', 'users.assign_role'],
-    })
-  )
-
-router
-  .patch('/api/v1/clinics/:clinicId/members/:membershipId/role', [
-    ClinicMemberAccessController,
-    'updateRole',
-  ])
-  .where('clinicId', router.matchers.uuid())
-  .where('membershipId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(
-    middleware.clinicPermission({
-      permissions: ['users.assign_role'],
-    })
-  )
-
-router
-  .patch('/api/v1/clinics/:clinicId/members/:membershipId/status', [
-    ClinicMemberAccessController,
-    'updateStatus',
-  ])
-  .where('clinicId', router.matchers.uuid())
-  .where('membershipId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-  .use(
-    middleware.clinicPermission({
-      permissions: ['users.deactivate'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/', [PatientsController, 'index']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read'],
-      })
-    )
-
-    router.post('/', [PatientsController, 'store']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.create'],
-      })
-    )
-
-    router.get('/:patientId', [PatientsController, 'show']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read'],
-      })
-    )
-
-    router.patch('/:patientId', [PatientsController, 'update']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.update'],
-      })
-    )
-
-    router.patch('/:patientId/status', [PatientLinkStatusController, 'updateStatus']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.update'],
-      })
-    )
-  })
-  .prefix('/api/v1/clinics/:clinicId/patients')
-  .where('clinicId', router.matchers.uuid())
-  .where('patientId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/', [MedicalRecordsController, 'show']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read', 'medical_records.read'],
-      })
-    )
-
-    router.post('/entries', [MedicalRecordEntriesController, 'store']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read', 'medical_records.create'],
-      })
-    )
-
-    router.get('/entries/:entryId', [MedicalRecordEntriesController, 'show']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read', 'medical_records.read'],
-      })
-    )
-
-    router
-      .post('/entries/:entryId/corrections', [MedicalRecordCorrectionsController, 'correct'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['patients.read', 'medical_records.correct'],
-        })
-      )
-
-    router.get('/entries/:entryId/attachments', [MedicalRecordAttachmentsController, 'index']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read', 'attachments.read'],
-      })
-    )
-
-    router
-      .get('/entries/:entryId/attachments/:attachmentId/download', [
-        MedicalRecordAttachmentDownloadsController,
-        'download',
-      ])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['patients.read', 'attachments.read'],
-        })
-      )
-
-    router.post('/entries/:entryId/attachments', [MedicalRecordAttachmentsController, 'store']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read', 'attachments.upload'],
-      })
-    )
-  })
-  .prefix('/api/v1/clinics/:clinicId/patients/:patientId/medical-record')
-  .where('clinicId', router.matchers.uuid())
-  .where('patientId', router.matchers.uuid())
-  .where('entryId', router.matchers.uuid())
-  .where('attachmentId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/', [ProfessionalsController, 'index']).use(
-      middleware.clinicPermission({
-        permissions: ['professionals.read'],
-      })
-    )
-
-    router.post('/', [ProfessionalsController, 'store']).use(
-      middleware.clinicPermission({
-        permissions: ['professionals.create'],
-      })
-    )
-
-    router.get('/:professionalId', [ProfessionalsController, 'show']).use(
-      middleware.clinicPermission({
-        permissions: ['professionals.read'],
-      })
-    )
-
-    router.patch('/:professionalId', [ProfessionalsController, 'update']).use(
-      middleware.clinicPermission({
-        permissions: ['professionals.update'],
-      })
-    )
-
-    router.patch('/:professionalId/status', [ProfessionalLinkStatusController, 'updateStatus']).use(
-      middleware.clinicPermission({
-        permissions: ['professionals.update'],
-      })
-    )
-  })
-  .prefix('/api/v1/clinics/:clinicId/professionals')
-  .where('clinicId', router.matchers.uuid())
-  .where('professionalId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/schedule', [ProfessionalSchedulesController, 'show']).use(
-      middleware.clinicPermission({
-        permissions: ['schedules.read'],
-      })
-    )
-
-    router
-      .post('/weekly-availabilities', [ProfessionalWeeklyAvailabilitiesController, 'store'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['schedules.read'],
-        })
-      )
-      .use(middleware.scheduleManagement())
-
-    router
-      .patch('/weekly-availabilities/:availabilityId', [
-        ProfessionalWeeklyAvailabilitiesController,
-        'update',
-      ])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['schedules.read'],
-        })
-      )
-      .use(middleware.scheduleManagement())
-
-    router
-      .patch('/weekly-availabilities/:availabilityId/status', [
-        ProfessionalScheduleStatusController,
-        'updateWeeklyAvailabilityStatus',
-      ])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['schedules.read'],
-        })
-      )
-      .use(middleware.scheduleManagement())
-
-    router
-      .post('/schedule-blocks', [ProfessionalScheduleBlocksController, 'store'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['schedules.read'],
-        })
-      )
-      .use(middleware.scheduleManagement())
-
-    router
-      .patch('/schedule-blocks/:blockId', [ProfessionalScheduleBlocksController, 'update'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['schedules.read'],
-        })
-      )
-      .use(middleware.scheduleManagement())
-
-    router
-      .patch('/schedule-blocks/:blockId/status', [
-        ProfessionalScheduleStatusController,
-        'updateScheduleBlockStatus',
-      ])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['schedules.read'],
-        })
-      )
-      .use(middleware.scheduleManagement())
-  })
-  .prefix('/api/v1/clinics/:clinicId/professionals/:professionalId')
-  .where('clinicId', router.matchers.uuid())
-  .where('professionalId', router.matchers.uuid())
-  .where('availabilityId', router.matchers.uuid())
-  .where('blockId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/', [AppointmentsController, 'index']).use(
-      middleware.clinicPermission({
-        permissions: ['appointments.read'],
-      })
-    )
-
-    router
-      .post('/', [AppointmentsController, 'store'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'create',
-        })
-      )
-
-    router.get('/:appointmentId', [AppointmentsController, 'show']).use(
-      middleware.clinicPermission({
-        permissions: ['appointments.read'],
-      })
-    )
-
-    router
-      .patch('/:appointmentId', [AppointmentsController, 'update'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'update',
-        })
-      )
-    router
-      .post('/:appointmentId/confirm', [AppointmentStatusController, 'confirm'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'changeStatus',
-        })
-      )
-
-    router
-      .post('/:appointmentId/cancel', [AppointmentStatusController, 'cancel'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'changeStatus',
-        })
-      )
-
-    router
-      .post('/:appointmentId/complete', [AppointmentStatusController, 'complete'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'changeStatus',
-        })
-      )
-
-    router
-      .post('/:appointmentId/no-show', [AppointmentStatusController, 'markNoShow'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'changeStatus',
-        })
-      )
-
-    router
-      .post('/:appointmentId/reschedule', [AppointmentReschedulingController, 'reschedule'])
-      .use(
-        middleware.clinicPermission({
-          permissions: ['appointments.read'],
-        })
-      )
-      .use(
-        middleware.appointmentManagement({
-          action: 'reschedule',
-        })
-      )
-  })
-  .prefix('/api/v1/clinics/:clinicId/appointments')
-  .where('clinicId', router.matchers.uuid())
-  .where('appointmentId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
-
-router
-  .group(() => {
-    router.get('/', [AuditLogsController, 'index']).use(
-      middleware.clinicPermission({
-        permissions: ['audit_logs.read'],
-      })
-    )
-  })
-  .prefix('/api/v1/clinics/:clinicId/audit-logs')
-  .where('clinicId', router.matchers.uuid())
-  .use(
-    middleware.auth({
-      guards: ['api'],
-    })
-  )
+  .prefix('/api/v1')
