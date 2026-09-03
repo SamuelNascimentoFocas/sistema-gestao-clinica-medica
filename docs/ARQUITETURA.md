@@ -245,7 +245,65 @@ O total passa de 14 para 28 controllers, mantendo 58 actions e a rota raiz inlin
 Em `start/routes.ts`, mudam somente imports e 24 referências a handlers. Não se
 usa `router.resource()`, para evitar rotas extras ou mudanças de método/path.
 Os grupos, prefixos, UUID matchers e middlewares, inclusive sua ordem, permanecem
-inalterados. Route Groups continuam reservados à Fase 5; factories, à Fase 6.
+inalterados nessa fase. Route Groups são tratados na Fase 5; factories, na Fase 6.
+
+#### Route Groups e reauditoria de validação (Fase 5 — B07/B03)
+
+`backend/start/routes.ts` passa de grupos independentes com prefixos e autenticação
+repetidos para uma hierarquia explícita. Os handlers definidos na Fase 4 não mudam.
+
+```text
+/                                      público, fora da API versionada
+/api/v1
+├── /auth/login                        público
+└── auth({ guards: ['api'] })           57 rotas
+    ├── /auth                          me, me/clinics e logout
+    ├── globalAdmin()                  15 rotas
+    │   ├── /clinics
+    │   ├── /users
+    │   └── /clinic-memberships
+    └── /clinics/:clinicId              39 rotas; matcher UUID compartilhado
+        ├── /context e /members
+        ├── /patients
+        ├── /patients/:patientId/medical-record
+        ├── /professionals
+        ├── /professionals/:professionalId (agenda/disponibilidades/bloqueios)
+        ├── /appointments
+        └── /audit-logs
+```
+
+Autenticação é aplicada uma única vez ao grupo protegido. `globalAdmin()` fica
+somente no subgrupo dos três recursos administrativos, nunca no contexto clínico.
+O matcher de `clinicId` é compartilhado pelo grupo clínico; os demais matchers
+UUID permanecem nos respectivos módulos/rotas.
+
+As permissões comuns `schedules.read` e `appointments.read` passam aos grupos de
+agenda e consultas, respectivamente. Em todas essas rotas, os argumentos já eram
+idênticos. `scheduleManagement()` continua apenas nas seis rotas de escrita da
+agenda; a leitura não passa a exigir gestão. `appointmentManagement()` continua
+local, com os argumentos originais `create`, `update`, `changeStatus` e `reschedule`;
+listagem/detalhe não recebem esse middleware. As demais permissões clínicas ficam
+locais, pois variam por operação. Não são criadas duplicações nem permissões novas.
+
+A sequência efetiva permanece `auth → globalAdmin` na administração global e
+`auth → clinicPermission → gestão (quando existente)` no contexto clínico. O
+kernel, os middlewares globais e seus argumentos não são alterados. A composição
+foi conferida no código instalado do AdonisJS e no resultado do router, não apenas
+pela ordem visual das chamadas em `routes.ts`. Não se utiliza `router.resource()`.
+
+A reauditoria B03 mantém 28 controllers e 58 actions: 46 recebem entrada e validam
+antes do uso; as outras 12 não leem body/query/upload. Há 35 chamadas aguardadas a
+`request.validateUsing(...)` (34 de body e uma multipart/upload) e 11 consultas
+aguardadas com `validator.validate(request.qs())`. O upload continua validado pelo
+schema Vine de arquivos. Os parâmetros presentes nas rotas mantêm matchers UUID.
+
+Os 41 validators exportados nos 12 arquivos continuam compilados por `vine.compile`
+e todos são usados. Não foram identificados acessos crus a `request.input`, `all`,
+`only`, `except`, `body`, `file`, `files`, query sem validação ou escapes do request.
+Nenhuma lacuna exigiu correção: controllers, schemas Vine e a baseline da Fase 1
+permanecem intactos. A comparação dos contratos registrados antes/depois inclui
+59 rotas, middlewares na ordem efetiva com seus argumentos, 58 handlers e as
+regras dos 46 contratos de validação. Factories continuam fora desta fase.
 
 #### Migrations
 
@@ -770,6 +828,13 @@ clínicos e 16 administrativos. A validação utilizou exclusivamente o novo ban
 Uma comparação sintática adicional confirmou parâmetros/corpos idênticos nas
 58 actions e somente substituições de imports/handlers nas rotas. Esse diagnóstico
 não foi convertido em teste que congele a organização interna dos controllers.
+
+Na Fase 5, passaram os **91 testes funcionais**, os dois testes de contratos e
+uma seleção prévia de 13 testes de autenticação/acesso clínico. Os testes e suas
+fixtures não foram alterados. A execução utilizou exclusivamente
+`clinic_phase5_suite_20260902`, em `127.0.0.1:55432`, com o PGDATA temporário
+independente verificado antes de cada execução e aplicação/rollback das 25
+migrations. Formatação, typecheck, lint e build também passaram.
 
 ## 19. Builds
 
