@@ -79,8 +79,9 @@ Recebem requisições HTTP e coordenam:
 
 - autenticação;
 - validação;
-- consulta e persistência;
+- chamada dos casos de uso (nos módulos extraídos para Services);
 - serialização;
+- tradução de erros de aplicação;
 - respostas HTTP.
 
 #### Validators
@@ -107,6 +108,83 @@ Concentram regras reutilizáveis, como:
 
 - autorização por consultório;
 - proteção do último administrador local efetivo.
+
+Na Fase 3 da adequação ao parecer (B08/B09), pacientes, profissionais, agendas,
+agendamentos, prontuários e anexos passam a delegar consultas e operações
+aplicacionais aos Services abaixo, em `backend/app/services/`. Os dois Services
+anteriores de autorização e administração local não foram alterados.
+
+| Service                                | Responsabilidade                                                                                                                                  |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `patient_registration_service.ts`      | Identidade global por CPF, vínculo local e prontuário único na mesma transação.                                                                   |
+| `patient_service.ts`                   | Consultas, atualização global/local, ativação de vínculo e tradução dos conflitos de unicidade do paciente.                                       |
+| `professional_registration_service.ts` | Compatibilidade do CRM/identidade, conta médica e criação do vínculo local na transação existente.                                                |
+| `professional_service.ts`              | Consultas, configuração/ativação do vínculo e conflitos de unicidade do profissional.                                                             |
+| `professional_schedule_service.ts`     | Disponibilidades semanais e bloqueios: ordem temporal, sobreposição, edição e ativação.                                                           |
+| `appointment_query_service.ts`         | Consultas detalhadas e listagem paginada, com limites do intervalo da agenda.                                                                     |
+| `appointment_policy_service.ts`        | Elegibilidade de paciente/profissional, escopo próprio/geral, duração, disponibilidade e conflitos de horário.                                    |
+| `appointment_booking_service.ts`       | Criação, edição administrativa e reagendamento, preservando versão, locks, transações e histórico.                                                |
+| `appointment_status_service.ts`        | Confirmação, cancelamento, conclusão e falta, incluindo idempotência e limites temporais.                                                         |
+| `medical_record_context_service.ts`    | Contexto ativo paciente/prontuário, autoria clínica e escopo de leitura/escrita de entradas; recebe a transação e a opção de lock explicitamente. |
+| `medical_record_read_service.ts`       | Timeline e entrada detalhada, com relações comuns e registro de acesso.                                                                           |
+| `medical_record_entry_service.ts`      | Criação/correção imutável, compatibilidade com agendamento e concorrência de correções.                                                           |
+| `medical_record_access_service.ts`     | Finalidade obrigatória e auditoria de leitura de prontuários/anexos.                                                                              |
+| `medical_record_attachment_service.ts` | Listagem, upload e download autorizados pelo contexto clínico; coordena metadados, transação e compensação.                                       |
+| `attachment_storage_service.ts`        | Nome/tipo real, SHA-256, chave privada, movimentação, leitura e remoção compensatória de arquivos.                                                |
+| `postgres_error.ts`                    | Leitura tipada de código/constraint PostgreSQL; não decide respostas HTTP.                                                                        |
+
+Os novos Services não recebem `HttpContext`, `request` ou `response`, nem escolhem
+status HTTP. Recebem IDs, contexto de escopo e dados já validados; os tipos de
+payload são inferidos dos validators com imports apenas de tipo, sem duplicar
+schemas. Os arquivos de upload continuam sendo os objetos `MultipartFile`
+validados, usados como dependência de armazenamento, sem transportar a requisição.
+Não foram acrescentadas dependências, camada genérica de repositórios ou factories.
+
+#### Erros na fronteira HTTP
+
+`backend/app/exceptions/domain_error.ts` define `DomainError`, sem status HTTP.
+Os controllers usam `controllers/helpers/domain_error_response.ts` para o mapeamento:
+
+| Categoria             | Resposta preservada | Situações                                                                          |
+| --------------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| `forbidden`           | 403                 | Autoria clínica ou gestão de agendamento fora do escopo.                           |
+| `not_found`           | 404                 | Recurso/vínculo ausente no contexto permitido.                                     |
+| `conflict`            | 409                 | Inatividade, unicidade, versão, estado, sobreposição ou arquivo indisponível.      |
+| `invalid`             | 422                 | Finalidade, metadados de arquivo, intervalo ou regra temporal inválida.            |
+| `storage_unavailable` | 500                 | Disco cadastrado no anexo não configurado; conserva a resposta explícita anterior. |
+
+As mensagens existentes são preservadas. Erros desconhecidos são relançados ao
+handler existente. Nos mesmos casos anteriormente tratados, os Services convertem
+`23P01` de agendamentos e `23505` das constraints conhecidas de pacientes,
+profissionais e correções em conflito. Não há captura genérica de falhas de banco
+como conflito. Body de atualização vazio continua retornando 400 no controller.
+A ordem de busca/validação dos endpoints de status foi mantida, inclusive a
+precedência de 404 sobre body inválido quando o recurso não existe.
+
+#### Fronteiras preservadas na extração
+
+- As 13 transações antes presentes nesses seis controllers foram transferidas
+  integralmente, sem criar novas transações nem incorporar consultas externas a elas.
+- Os mesmos locks e verificações de versão continuam nos mesmos pontos das operações.
+  A confirmação idempotente continua sendo verificada antes da versão esperada.
+- A leitura global do prontuário/anexo continua condicionada ao vínculo ativo do
+  paciente na clínica atual; escrita e correção continuam restritas à clínica de origem.
+- No upload, preparação/hash e movimentação continuam antes da transação; paciente
+  e entrada são novamente consultados com lock dentro dela. Falhas removem somente
+  as chaves já movimentadas, com `Promise.allSettled`, como anteriormente.
+- O upload devolve uma operação de compensação para o controller preservar também
+  a falha síncrona durante a construção da resposta. Particularidade preexistente:
+  nesse ponto o commit já ocorreu; os arquivos são compensados, mas os metadados
+  permanecem. Alterar essa política exigiria uma decisão funcional fora desta fase.
+- SHA-256 continua calculado antes da movimentação e persistido com os metadados;
+  não foi acrescentada uma nova política de revalidação do hash no download.
+- Serialização pública, `Content-Disposition`, `nosniff`, tipo/tamanho e
+  `Cache-Control: private, no-store` permanecem na camada HTTP. Chaves, disco e hash
+  privados continuam fora da resposta pública de anexos.
+
+Os contratos de rotas e validators da Fase 1 não foram alterados. A reorganização
+Resource Controllers/ações especializadas e os Route Groups continuam reservados
+às fases seguintes.
 
 #### Migrations
 
@@ -614,6 +692,13 @@ Resultado registrado no fechamento do MVP:
 ```text
 88 testes aprovados
 ```
+
+Na Fase 3, a suíte passou com **91 testes**: os 88 existentes e três cenários
+adicionais de compensação de anexos (segunda movimentação, segunda persistência
+e construção da resposta). Os dois testes de contratos também passaram,
+preservando 59 rotas e 46 contratos de validação. A execução utilizou somente
+`clinic_phase3_suite_20260902`, no cluster temporário independente em
+`127.0.0.1:55432`, com aplicação e rollback das 25 migrations aprovadas.
 
 ## 19. Builds
 

@@ -1,6 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { mock } from 'node:test'
+import { MultipartFile } from '@adonisjs/core/bodyparser'
+import { Response } from '@adonisjs/core/http'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
 import app from '@adonisjs/core/services/app'
@@ -1338,6 +1341,93 @@ test.group('Medical records API', (group) => {
       assert.notProperty(responseAttachment, 'publicUrl')
     }
   })
+
+  for (const failureStage of ['second_move', 'second_save', 'response'] as const) {
+    test(`compensates attachment files on ${failureStage} failure`, async ({ client, assert }) => {
+      const clinic = await createClinic('Clínica de Compensação de Anexos')
+      const doctor = await createUser('attachments.compensation@example.com')
+      await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+      const { patient, medicalRecord } = await createPatient('Paciente de Compensação')
+      const patientLink = await createPatientLink({ patient, clinic })
+      const professionalLink = await createProfessionalLink({
+        clinic,
+        user: doctor,
+        fullName: 'Dra. Compensação',
+        crmNumber: '98309',
+      })
+      const entry = await createEntry({
+        medicalRecord,
+        patient,
+        clinic,
+        patientLink,
+        professionalLink,
+        author: doctor,
+        content: 'Entrada para testar compensação de arquivos sintéticos.',
+      })
+      const token = await createToken(doctor)
+      const failure = new Error(`Synthetic attachment failure: ${failureStage}`)
+      let calls = 0
+      let restore: () => void
+
+      if (failureStage === 'second_move') {
+        const original = MultipartFile.prototype.moveToDisk
+        const mocked = mock.method(
+          MultipartFile.prototype,
+          'moveToDisk',
+          async function (this: MultipartFile, ...args: Parameters<typeof original>) {
+            if (++calls === 2) throw failure
+            return original.apply(this, args)
+          }
+        )
+        restore = () => mocked.mock.restore()
+      } else if (failureStage === 'second_save') {
+        const original = MedicalRecordAttachment.prototype.save
+        const mocked = mock.method(
+          MedicalRecordAttachment.prototype,
+          'save',
+          async function (this: MedicalRecordAttachment) {
+            if (++calls === 2) throw failure
+            return original.call(this)
+          }
+        )
+        restore = () => mocked.mock.restore()
+      } else {
+        const mocked = mock.method(Response.prototype, 'created', () => {
+          throw failure
+        })
+        restore = () => mocked.mock.restore()
+      }
+
+      try {
+        const response = await client
+          .post(
+            `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+              `/medical-record/entries/${entry.id}/attachments`
+          )
+          .header('Accept', 'application/json')
+          .header('Authorization', `Bearer ${token}`)
+          .file('files[]', validPdfBuffer, { filename: 'primeiro.pdf' })
+          .file('files[]', validPngBuffer, { filename: 'segundo.png' })
+
+        response.assertStatus(500)
+        const attachments = await MedicalRecordAttachment.query().where(
+          'medical_record_entry_id',
+          entry.id
+        )
+        // The original transaction commits before HTTP serialization. Keep that boundary:
+        // persistence failure rolls back rows; response failure compensates files only.
+        assert.lengthOf(attachments, failureStage === 'response' ? 2 : 0)
+        assert.deepEqual(
+          await readdir(
+            getStoredAttachmentPath(`medical-records/${medicalRecord.id}/entries/${entry.id}`)
+          ),
+          []
+        )
+      } finally {
+        restore()
+      }
+    })
+  }
 
   test('requires attachment permission and restricts uploads to the entry origin clinic', async ({
     client,
