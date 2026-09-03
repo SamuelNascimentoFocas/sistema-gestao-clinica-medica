@@ -1,5 +1,10 @@
 "use client";
 
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { professionalFormSchema } from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
 import {
   browserApi,
   isSuccessfulResponse,
@@ -7,7 +12,7 @@ import {
   type BrowserResponse,
 } from "@/lib/client/browser-api";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,14 +35,11 @@ import {
 type CreateProfessionalCardProps = {
   clinicId: string;
   doctorOptions: ProfessionalUserOption[];
-  onCreated: (
-    professionalLink: ClinicProfessionalLink,
-  ) => void;
+  onCreated: (professionalLink: ClinicProfessionalLink) => void;
 };
 
 async function readResponseMessage(response: BrowserResponse) {
-  const body: unknown = await readBrowserJson(response)
-    .catch(() => null);
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -60,33 +62,25 @@ export function CreateProfessionalCard({
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const [formValues, setFormValues] =
-    useState<CreateProfessionalFormValues>({
+  const {
+    control,
+    register,
+    reset,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isSaving },
+  } = useForm<CreateProfessionalFormValues>({
+    resolver: zodResolver(professionalFormSchema),
+    defaultValues: {
       ...EMPTY_PROFESSIONAL_FORM,
-    });
+    },
+  });
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  const [successMessage, setSuccessMessage] = useState<
-    string | null
-  >(null);
-
-  function updateField(
-    field: keyof CreateProfessionalFormValues,
-    value: string | boolean,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   function resetForm() {
-    setFormValues({
+    reset({
       ...EMPTY_PROFESSIONAL_FORM,
     });
 
@@ -98,24 +92,15 @@ export function CreateProfessionalCard({
     setIsOpen(false);
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setIsSaving(true);
+  async function handleSubmit(formValues: CreateProfessionalFormValues) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    const duration = Number(
-      formValues.defaultAppointmentDurationMinutes,
-    );
+    const duration = Number(formValues.defaultAppointmentDurationMinutes);
 
     try {
       const response = await browserApi.request<string>({
-        url: `/api/clinics/${encodeURIComponent(
-          clinicId,
-        )}/professionals`,
+        url: `/api/clinics/${encodeURIComponent(clinicId)}/professionals`,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,10 +114,8 @@ export function CreateProfessionalCard({
           email: formValues.email,
           userId: formValues.userId || null,
           localCode: formValues.localCode,
-          defaultAppointmentDurationMinutes:
-            duration,
-          acceptsAppointments:
-            formValues.acceptsAppointments,
+          defaultAppointmentDurationMinutes: duration,
+          acceptsAppointments: formValues.acceptsAppointments,
         }),
       });
 
@@ -144,29 +127,22 @@ export function CreateProfessionalCard({
       }
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      const body =
-        (await readBrowserJson(response)) as ProfessionalLinkResponse;
+      const body = (await readBrowserJson(
+        response,
+      )) as ProfessionalLinkResponse;
 
       onCreated(body.professionalLink);
 
       resetForm();
       setIsOpen(false);
-      setSuccessMessage(
-        "Profissional cadastrado e vinculado à clínica.",
-      );
+      setSuccessMessage("Profissional cadastrado e vinculado à clínica.");
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsSaving(false);
+      setErrorMessage("Não foi possível comunicar com o servidor");
     }
   }
 
@@ -175,13 +151,11 @@ export function CreateProfessionalCard({
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>
-              Cadastro de profissionais
-            </CardTitle>
+            <CardTitle>Cadastro de profissionais</CardTitle>
 
             <CardDescription>
-              Cadastre um profissional e configure seu
-              vínculo de atendimento com a clínica.
+              Cadastre um profissional e configure seu vínculo de atendimento
+              com a clínica.
             </CardDescription>
           </div>
 
@@ -198,10 +172,7 @@ export function CreateProfessionalCard({
 
         {successMessage ? (
           <CardContent>
-            <p
-              className="text-sm font-medium text-emerald-700"
-              role="status"
-            >
+            <p className="text-sm font-medium text-emerald-700" role="status">
               {successMessage}
             </p>
           </CardContent>
@@ -216,230 +187,275 @@ export function CreateProfessionalCard({
         <CardTitle>Novo profissional</CardTitle>
 
         <CardDescription>
-          Informe os dados profissionais e as configurações
-          específicas desta clínica.
+          Informe os dados profissionais e as configurações específicas desta
+          clínica.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <form
-          className="space-y-6"
-          onSubmit={handleSubmit}
-        >
+        <form className="space-y-6" onSubmit={submitForm(handleSubmit)}>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="professional-full-name">
-                Nome completo
-              </Label>
+              <Label htmlFor="professional-full-name">Nome completo</Label>
 
-              <Input
-                id="professional-full-name"
-                required
-                minLength={3}
-                maxLength={180}
-                disabled={isSaving}
-                value={formValues.fullName}
-                autoComplete="name"
-                onChange={(event) =>
-                  updateField(
-                    "fullName",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="fullName"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.fullName}
+                    aria-describedby={
+                      errors.fullName
+                        ? "professional-full-name-error"
+                        : undefined
+                    }
+                    id="professional-full-name"
+                    required
+                    minLength={3}
+                    maxLength={180}
+                    disabled={isSaving}
+                    autoComplete="name"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-full-name-error"}
+                message={errors.fullName?.message}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="professional-crm-number">
-                Número do CRM
-              </Label>
+              <Label htmlFor="professional-crm-number">Número do CRM</Label>
 
-              <Input
-                id="professional-crm-number"
-                required
-                minLength={1}
-                maxLength={30}
-                disabled={isSaving}
-                value={formValues.crmNumber}
-                placeholder="Ex.: 12345"
-                onChange={(event) =>
-                  updateField(
-                    "crmNumber",
-                    event.target.value.toUpperCase(),
-                  )
-                }
+              <Controller
+                control={control}
+                name="crmNumber"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.crmNumber}
+                    aria-describedby={
+                      errors.crmNumber
+                        ? "professional-crm-number-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      field.onChange(event.target.value.toUpperCase())
+                    }
+                    id="professional-crm-number"
+                    required
+                    minLength={1}
+                    maxLength={30}
+                    disabled={isSaving}
+                    placeholder="Ex.: 12345"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-crm-number-error"}
+                message={errors.crmNumber?.message}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="professional-crm-state">
-                UF do CRM
-              </Label>
+              <Label htmlFor="professional-crm-state">UF do CRM</Label>
 
-              <Input
-                id="professional-crm-state"
-                required
-                minLength={2}
-                maxLength={2}
-                disabled={isSaving}
-                value={formValues.crmState}
-                placeholder="MG"
-                onChange={(event) =>
-                  updateField(
-                    "crmState",
-                    event.target.value
-                      .replace(/[^A-Za-z]/g, "")
-                      .toUpperCase(),
-                  )
-                }
+              <Controller
+                control={control}
+                name="crmState"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.crmState}
+                    aria-describedby={
+                      errors.crmState
+                        ? "professional-crm-state-error"
+                        : undefined
+                    }
+                    onChange={(event) =>
+                      field.onChange(
+                        event.target.value
+                          .replace(/[^A-Za-z]/g, "")
+                          .toUpperCase(),
+                      )
+                    }
+                    id="professional-crm-state"
+                    required
+                    minLength={2}
+                    maxLength={2}
+                    disabled={isSaving}
+                    placeholder="MG"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-crm-state-error"}
+                message={errors.crmState?.message}
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="professional-specialty">
-                Especialidade
-              </Label>
+              <Label htmlFor="professional-specialty">Especialidade</Label>
 
-              <Input
-                id="professional-specialty"
-                required
-                minLength={2}
-                maxLength={120}
-                disabled={isSaving}
-                value={formValues.specialty}
-                placeholder="Ex.: Clínica Médica"
-                onChange={(event) =>
-                  updateField(
-                    "specialty",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="specialty"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.specialty}
+                    aria-describedby={
+                      errors.specialty
+                        ? "professional-specialty-error"
+                        : undefined
+                    }
+                    id="professional-specialty"
+                    required
+                    minLength={2}
+                    maxLength={120}
+                    disabled={isSaving}
+                    placeholder="Ex.: Clínica Médica"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-specialty-error"}
+                message={errors.specialty?.message}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="professional-phone">
-                Telefone
-              </Label>
+              <Label htmlFor="professional-phone">Telefone</Label>
 
-              <Input
-                id="professional-phone"
-                type="tel"
-                maxLength={20}
-                disabled={isSaving}
-                value={formValues.phone}
-                autoComplete="tel"
-                onChange={(event) =>
-                  updateField(
-                    "phone",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="phone"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.phone}
+                    aria-describedby={
+                      errors.phone ? "professional-phone-error" : undefined
+                    }
+                    id="professional-phone"
+                    type="tel"
+                    maxLength={20}
+                    disabled={isSaving}
+                    autoComplete="tel"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-phone-error"}
+                message={errors.phone?.message}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="professional-email">
-                E-mail
-              </Label>
+              <Label htmlFor="professional-email">E-mail</Label>
 
-              <Input
-                id="professional-email"
-                type="email"
-                maxLength={254}
-                disabled={isSaving}
-                value={formValues.email}
-                autoComplete="email"
-                onChange={(event) =>
-                  updateField(
-                    "email",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="email"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.email}
+                    aria-describedby={
+                      errors.email ? "professional-email-error" : undefined
+                    }
+                    id="professional-email"
+                    type="email"
+                    maxLength={254}
+                    disabled={isSaving}
+                    autoComplete="email"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-email-error"}
+                message={errors.email?.message}
               />
             </div>
           </div>
 
           <div className="border-t pt-6">
-            <h3 className="font-medium">
-              Conta de acesso
-            </h3>
+            <h3 className="font-medium">Conta de acesso</h3>
 
             <p className="mt-1 text-sm text-muted-foreground">
-              A associação é opcional. Somente contas com
-              vínculo Médico ativo nesta clínica podem ser
-              selecionadas.
+              A associação é opcional. Somente contas com vínculo Médico ativo
+              nesta clínica podem ser selecionadas.
             </p>
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="professional-user">
-              Conta de usuário
-            </Label>
+            <Label htmlFor="professional-user">Conta de usuário</Label>
 
             <select
+              {...register("userId")}
+              aria-invalid={!!errors.userId}
+              aria-describedby={
+                errors.userId ? "professional-user-error" : undefined
+              }
               id="professional-user"
-              value={formValues.userId}
               disabled={isSaving}
               className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onChange={(event) =>
-                updateField(
-                  "userId",
-                  event.target.value,
-                )
-              }
             >
-              <option value="">
-                Nenhuma conta vinculada
-              </option>
+              <option value="">Nenhuma conta vinculada</option>
 
               {doctorOptions.map((option) => (
-                <option
-                  key={option.userId}
-                  value={option.userId}
-                >
+                <option key={option.userId} value={option.userId}>
                   {option.fullName} — {option.email}
                 </option>
               ))}
             </select>
+            <FormFieldError
+              id={"professional-user-error"}
+              message={errors.userId?.message}
+            />
 
             {doctorOptions.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Não há contas médicas ativas disponíveis
-                nesta clínica.
+                Não há contas médicas ativas disponíveis nesta clínica.
               </p>
             ) : null}
           </div>
 
           <div className="border-t pt-6">
-            <h3 className="font-medium">
-              Configuração na clínica
-            </h3>
+            <h3 className="font-medium">Configuração na clínica</h3>
 
             <p className="mt-1 text-sm text-muted-foreground">
-              Estes dados pertencem somente ao vínculo com
-              a clínica atual.
+              Estes dados pertencem somente ao vínculo com a clínica atual.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="professional-local-code">
-                Código local
-              </Label>
+              <Label htmlFor="professional-local-code">Código local</Label>
 
-              <Input
-                id="professional-local-code"
-                maxLength={60}
-                disabled={isSaving}
-                value={formValues.localCode}
-                placeholder="Ex.: MED-001"
-                onChange={(event) =>
-                  updateField(
-                    "localCode",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="localCode"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.localCode}
+                    aria-describedby={
+                      errors.localCode
+                        ? "professional-local-code-error"
+                        : undefined
+                    }
+                    id="professional-local-code"
+                    maxLength={60}
+                    disabled={isSaving}
+                    placeholder="Ex.: MED-001"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-local-code-error"}
+                message={errors.localCode?.message}
               />
             </div>
 
@@ -448,66 +464,67 @@ export function CreateProfessionalCard({
                 Duração padrão da consulta
               </Label>
 
-              <Input
-                id="professional-duration"
-                type="number"
-                required
-                min={5}
-                max={480}
-                step={1}
-                disabled={isSaving}
-                value={
-                  formValues.defaultAppointmentDurationMinutes
-                }
-                onChange={(event) =>
-                  updateField(
-                    "defaultAppointmentDurationMinutes",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="defaultAppointmentDurationMinutes"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.defaultAppointmentDurationMinutes}
+                    aria-describedby={
+                      errors.defaultAppointmentDurationMinutes
+                        ? "professional-duration-error"
+                        : undefined
+                    }
+                    id="professional-duration"
+                    type="number"
+                    required
+                    min={5}
+                    max={480}
+                    step={1}
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"professional-duration-error"}
+                message={errors.defaultAppointmentDurationMinutes?.message}
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
               <label className="flex items-center gap-3 text-sm">
                 <input
+                  {...register("acceptsAppointments")}
+                  id={"professionalFormSchema-acceptsAppointments"}
+                  aria-invalid={!!errors.acceptsAppointments}
+                  aria-describedby={
+                    errors.acceptsAppointments
+                      ? "professionalFormSchema-acceptsAppointments-error"
+                      : undefined
+                  }
                   type="checkbox"
-                  checked={
-                    formValues.acceptsAppointments
-                  }
                   disabled={isSaving}
-                  onChange={(event) =>
-                    updateField(
-                      "acceptsAppointments",
-                      event.target.checked,
-                    )
-                  }
+                />
+                <FormFieldError
+                  id={"professionalFormSchema-acceptsAppointments-error"}
+                  message={errors.acceptsAppointments?.message}
                 />
 
-                <span>
-                  Este profissional aceita agendamentos
-                </span>
+                <span>Este profissional aceita agendamentos</span>
               </label>
             </div>
           </div>
 
           {errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
 
           <div className="flex flex-wrap gap-3">
-            <Button
-              type="submit"
-              disabled={isSaving}
-            >
-              {isSaving
-                ? "Cadastrando..."
-                : "Cadastrar profissional"}
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Cadastrando..." : "Cadastrar profissional"}
             </Button>
 
             <Button

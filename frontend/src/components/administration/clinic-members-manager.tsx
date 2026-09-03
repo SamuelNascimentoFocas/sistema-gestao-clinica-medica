@@ -1,5 +1,13 @@
 "use client";
 
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  memberFormSchema,
+  type MemberFormValues,
+} from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
 import {
   browserApi,
   isSuccessfulResponse,
@@ -7,17 +15,9 @@ import {
   type BrowserResponse,
 } from "@/lib/client/browser-api";
 
-import {
-  useState,
-  type FormEvent,
-} from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -37,24 +37,14 @@ type ClinicMembersManagerProps = {
   canChangeStatus: boolean;
 };
 
-type CreateMemberForm = {
-  fullName: string;
-  email: string;
-  password: string;
-  roleCode: ClinicMemberRoleCode;
-};
-
-const INITIAL_FORM: CreateMemberForm = {
+const INITIAL_FORM: MemberFormValues = {
   fullName: "",
   email: "",
   password: "",
   roleCode: "receptionist",
 };
 
-function getResponseMessage(
-  body: unknown,
-  fallback: string,
-) {
+function getResponseMessage(body: unknown, fallback: string) {
   if (
     typeof body === "object" &&
     body !== null &&
@@ -95,10 +85,7 @@ function getMembership(body: unknown): ClinicMember | null {
 
 function buildRoleDrafts(members: ClinicMember[]) {
   return Object.fromEntries(
-    members.map((member) => [
-      member.id,
-      member.role.code,
-    ]),
+    members.map((member) => [member.id, member.role.code]),
   ) as Record<string, ClinicMemberRoleCode>;
 }
 
@@ -111,17 +98,22 @@ export function ClinicMembersManager({
   canChangeStatus,
 }: ClinicMembersManagerProps) {
   const [members, setMembers] = useState(initialMembers);
-  const [form, setForm] =
-    useState<CreateMemberForm>(INITIAL_FORM);
-  const [roleDrafts, setRoleDrafts] = useState(
-    () => buildRoleDrafts(initialMembers),
+  const {
+    control,
+    register,
+    reset,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isCreating },
+  } = useForm<MemberFormValues>({
+    resolver: zodResolver(memberFormSchema),
+    defaultValues: INITIAL_FORM,
+  });
+  const [roleDrafts, setRoleDrafts] = useState(() =>
+    buildRoleDrafts(initialMembers),
   );
-  const [pendingAction, setPendingAction] =
-    useState<string | null>(null);
-  const [errorMessage, setErrorMessage] =
-    useState<string | null>(null);
-  const [successMessage, setSuccessMessage] =
-    useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   async function readResponse(response: BrowserResponse) {
     return readBrowserJson(response).catch(() => null) as Promise<unknown>;
@@ -140,9 +132,7 @@ export function ClinicMembersManager({
   function replaceMember(updatedMember: ClinicMember) {
     setMembers((currentMembers) =>
       currentMembers.map((member) =>
-        member.id === updatedMember.id
-          ? updatedMember
-          : member,
+        member.id === updatedMember.id ? updatedMember : member,
       ),
     );
 
@@ -152,31 +142,14 @@ export function ClinicMembersManager({
     }));
   }
 
-  async function handleCreate(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    const passwordBytes =
-      new TextEncoder().encode(form.password).length;
-
-    if (passwordBytes > 72) {
-      setErrorMessage(
-        "A senha ultrapassa o limite de 72 bytes.",
-      );
-
-      return;
-    }
-
+  async function handleCreate(form: MemberFormValues) {
     setPendingAction("create");
     setErrorMessage(null);
     setSuccessMessage(null);
 
     try {
       const response = await browserApi.request<string>({
-        url: `/api/clinics/${encodeURIComponent(
-          clinicId,
-        )}/members`,
+        url: `/api/clinics/${encodeURIComponent(clinicId)}/members`,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -192,35 +165,25 @@ export function ClinicMembersManager({
 
       if (!isSuccessfulResponse(response)) {
         throw new Error(
-          getResponseMessage(
-            body,
-            "Não foi possível cadastrar o usuário.",
-          ),
+          getResponseMessage(body, "Não foi possível cadastrar o usuário."),
         );
       }
 
       const membership = getMembership(body);
 
       if (!membership) {
-        throw new Error(
-          "O servidor retornou um vínculo inválido.",
-        );
+        throw new Error("O servidor retornou um vínculo inválido.");
       }
 
-      setMembers((currentMembers) => [
-        ...currentMembers,
-        membership,
-      ]);
+      setMembers((currentMembers) => [...currentMembers, membership]);
 
       setRoleDrafts((currentDrafts) => ({
         ...currentDrafts,
         [membership.id]: membership.role.code,
       }));
 
-      setForm(INITIAL_FORM);
-      setSuccessMessage(
-        "Usuário cadastrado e vinculado à clínica.",
-      );
+      reset(INITIAL_FORM);
+      setSuccessMessage("Usuário cadastrado e vinculado à clínica.");
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -233,8 +196,7 @@ export function ClinicMembersManager({
   }
 
   async function handleRoleUpdate(member: ClinicMember) {
-    const roleCode =
-      roleDrafts[member.id] ?? member.role.code;
+    const roleCode = roleDrafts[member.id] ?? member.role.code;
 
     if (roleCode === member.role.code) {
       return;
@@ -248,9 +210,7 @@ export function ClinicMembersManager({
       const response = await browserApi.request<string>({
         url: `/api/clinics/${encodeURIComponent(
           clinicId,
-        )}/members/${encodeURIComponent(
-          member.id,
-        )}/role`,
+        )}/members/${encodeURIComponent(member.id)}/role`,
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -268,19 +228,14 @@ export function ClinicMembersManager({
 
       if (!isSuccessfulResponse(response)) {
         throw new Error(
-          getResponseMessage(
-            body,
-            "Não foi possível alterar o perfil.",
-          ),
+          getResponseMessage(body, "Não foi possível alterar o perfil."),
         );
       }
 
       const updatedMember = getMembership(body);
 
       if (!updatedMember) {
-        throw new Error(
-          "O servidor retornou um vínculo inválido.",
-        );
+        throw new Error("O servidor retornou um vínculo inválido.");
       }
 
       replaceMember(updatedMember);
@@ -319,9 +274,7 @@ export function ClinicMembersManager({
       const response = await browserApi.request<string>({
         url: `/api/clinics/${encodeURIComponent(
           clinicId,
-        )}/members/${encodeURIComponent(
-          member.id,
-        )}/status`,
+        )}/members/${encodeURIComponent(member.id)}/status`,
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -339,19 +292,14 @@ export function ClinicMembersManager({
 
       if (!isSuccessfulResponse(response)) {
         throw new Error(
-          getResponseMessage(
-            body,
-            "Não foi possível alterar o status.",
-          ),
+          getResponseMessage(body, "Não foi possível alterar o status."),
         );
       }
 
       const updatedMember = getMembership(body);
 
       if (!updatedMember) {
-        throw new Error(
-          "O servidor retornou um vínculo inválido.",
-        );
+        throw new Error("O servidor retornou um vínculo inválido.");
       }
 
       replaceMember(updatedMember);
@@ -362,11 +310,7 @@ export function ClinicMembersManager({
         return;
       }
 
-      setSuccessMessage(
-        nextStatus
-          ? "Vínculo ativado."
-          : "Vínculo inativado.",
-      );
+      setSuccessMessage(nextStatus ? "Vínculo ativado." : "Vínculo inativado.");
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -378,7 +322,7 @@ export function ClinicMembersManager({
     }
   }
 
-  const isBusy = pendingAction !== null;
+  const isBusy = pendingAction !== null || isCreating;
 
   return (
     <main className="flex-1 p-4 sm:p-6 lg:p-8">
@@ -392,14 +336,10 @@ export function ClinicMembersManager({
         </h1>
 
         <p className="mt-2 text-muted-foreground">
-          Cadastre usuários e controle seus vínculos com esta
-          clínica.
+          Cadastre usuários e controle seus vínculos com esta clínica.
         </p>
 
-        <div
-          aria-live="polite"
-          className="mt-6 space-y-3"
-        >
+        <div aria-live="polite" className="mt-6 space-y-3">
           {errorMessage ? (
             <div
               role="alert"
@@ -428,72 +368,87 @@ export function ClinicMembersManager({
             <CardContent>
               <form
                 className="grid gap-4 md:grid-cols-2"
-                onSubmit={handleCreate}
+                onSubmit={submitForm(handleCreate)}
               >
                 <div className="space-y-2">
-                  <Label htmlFor="member-full-name">
-                    Nome completo
-                  </Label>
+                  <Label htmlFor="member-full-name">Nome completo</Label>
 
-                  <Input
-                    id="member-full-name"
+                  <Controller
+                    control={control}
                     name="fullName"
-                    autoComplete="name"
-                    required
-                    minLength={3}
-                    maxLength={180}
-                    value={form.fullName}
-                    onChange={(event) =>
-                      setForm((currentForm) => ({
-                        ...currentForm,
-                        fullName: event.target.value,
-                      }))
-                    }
+                    render={({ field }) => (
+                      <Input
+                        {...field}
+                        aria-invalid={!!errors.fullName}
+                        aria-describedby={
+                          errors.fullName ? "member-full-name-error" : undefined
+                        }
+                        id="member-full-name"
+                        autoComplete="name"
+                        required
+                        minLength={3}
+                        maxLength={180}
+                      />
+                    )}
+                  />
+                  <FormFieldError
+                    id={"member-full-name-error"}
+                    message={errors.fullName?.message}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="member-email">
-                    E-mail
-                  </Label>
+                  <Label htmlFor="member-email">E-mail</Label>
 
-                  <Input
-                    id="member-email"
+                  <Controller
+                    control={control}
                     name="email"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    maxLength={254}
-                    value={form.email}
-                    onChange={(event) =>
-                      setForm((currentForm) => ({
-                        ...currentForm,
-                        email: event.target.value,
-                      }))
-                    }
+                    render={({ field }) => (
+                      <Input
+                        {...field}
+                        aria-invalid={!!errors.email}
+                        aria-describedby={
+                          errors.email ? "member-email-error" : undefined
+                        }
+                        id="member-email"
+                        type="email"
+                        autoComplete="email"
+                        required
+                        maxLength={254}
+                      />
+                    )}
+                  />
+                  <FormFieldError
+                    id={"member-email-error"}
+                    message={errors.email?.message}
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="member-password">
-                    Senha inicial
-                  </Label>
+                  <Label htmlFor="member-password">Senha inicial</Label>
 
-                  <Input
-                    id="member-password"
+                  <Controller
+                    control={control}
                     name="password"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    minLength={12}
-                    maxLength={72}
-                    value={form.password}
-                    onChange={(event) =>
-                      setForm((currentForm) => ({
-                        ...currentForm,
-                        password: event.target.value,
-                      }))
-                    }
+                    render={({ field }) => (
+                      <Input
+                        {...field}
+                        aria-invalid={!!errors.password}
+                        aria-describedby={
+                          errors.password ? "member-password-error" : undefined
+                        }
+                        id="member-password"
+                        type="password"
+                        autoComplete="new-password"
+                        required
+                        minLength={12}
+                        maxLength={72}
+                      />
+                    )}
+                  />
+                  <FormFieldError
+                    id={"member-password-error"}
+                    message={errors.password?.message}
                   />
 
                   <p className="text-xs text-muted-foreground">
@@ -502,42 +457,31 @@ export function ClinicMembersManager({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="member-role">
-                    Perfil
-                  </Label>
+                  <Label htmlFor="member-role">Perfil</Label>
 
                   <select
+                    {...register("roleCode")}
+                    aria-invalid={!!errors.roleCode}
+                    aria-describedby={
+                      errors.roleCode ? "member-role-error" : undefined
+                    }
                     id="member-role"
-                    name="roleCode"
                     className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    value={form.roleCode}
-                    onChange={(event) => {
-                      const roleCode = event.target.value;
-
-                      if (isClinicMemberRoleCode(roleCode)) {
-                        setForm((currentForm) => ({
-                          ...currentForm,
-                          roleCode,
-                        }));
-                      }
-                    }}
                   >
                     {CLINIC_MEMBER_ROLES.map((role) => (
-                      <option
-                        key={role.code}
-                        value={role.code}
-                      >
+                      <option key={role.code} value={role.code}>
                         {role.label}
                       </option>
                     ))}
                   </select>
+                  <FormFieldError
+                    id={"member-role-error"}
+                    message={errors.roleCode?.message}
+                  />
                 </div>
 
                 <div className="md:col-span-2">
-                  <Button
-                    type="submit"
-                    disabled={isBusy}
-                  >
+                  <Button type="submit" disabled={isBusy}>
                     {pendingAction === "create"
                       ? "Cadastrando..."
                       : "Cadastrar e vincular"}
@@ -550,9 +494,7 @@ export function ClinicMembersManager({
 
         <Card className="mt-6">
           <CardHeader>
-            <CardTitle>
-              Membros da clínica ({members.length})
-            </CardTitle>
+            <CardTitle>Membros da clínica ({members.length})</CardTitle>
           </CardHeader>
 
           <CardContent>
@@ -563,15 +505,10 @@ export function ClinicMembersManager({
             ) : (
               <div className="space-y-4">
                 {members.map((member) => {
-                  const roleDraft =
-                    roleDrafts[member.id] ??
-                    member.role.code;
+                  const roleDraft = roleDrafts[member.id] ?? member.role.code;
 
                   return (
-                    <section
-                      key={member.id}
-                      className="rounded-lg border p-4"
-                    >
+                    <section key={member.id} className="rounded-lg border p-4">
                       <div className="grid gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(15rem,0.8fr)_auto] lg:items-end">
                         <div className="min-w-0">
                           <p className="truncate font-medium">
@@ -584,21 +521,15 @@ export function ClinicMembersManager({
 
                           <div className="mt-3 flex flex-wrap gap-2 text-xs">
                             <span className="rounded-full border px-2.5 py-1">
-                              Vínculo:{" "}
-                              {member.isActive
-                                ? "ativo"
-                                : "inativo"}
+                              Vínculo: {member.isActive ? "ativo" : "inativo"}
                             </span>
 
                             <span className="rounded-full border px-2.5 py-1">
                               Usuário:{" "}
-                              {member.user.isActive
-                                ? "ativo"
-                                : "inativo"}
+                              {member.user.isActive ? "ativo" : "inativo"}
                             </span>
 
-                            {member.id ===
-                            currentMembershipId ? (
+                            {member.id === currentMembershipId ? (
                               <span className="rounded-full border px-2.5 py-1">
                                 Seu vínculo
                               </span>
@@ -607,48 +538,29 @@ export function ClinicMembersManager({
                         </div>
 
                         <div className="space-y-2">
-                          <Label
-                            htmlFor={`role-${member.id}`}
-                          >
-                            Perfil
-                          </Label>
+                          <Label htmlFor={`role-${member.id}`}>Perfil</Label>
 
                           <div className="flex flex-col gap-2 sm:flex-row">
                             <select
                               id={`role-${member.id}`}
                               className="flex h-9 min-w-0 flex-1 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                              disabled={
-                                !canAssignRole || isBusy
-                              }
+                              disabled={!canAssignRole || isBusy}
                               value={roleDraft}
                               onChange={(event) => {
-                                const roleCode =
-                                  event.target.value;
-
-                                if (
-                                  isClinicMemberRoleCode(
-                                    roleCode,
-                                  )
-                                ) {
-                                  setRoleDrafts(
-                                    (currentDrafts) => ({
-                                      ...currentDrafts,
-                                      [member.id]: roleCode,
-                                    }),
-                                  );
+                                const roleCode = event.target.value;
+                                if (isClinicMemberRoleCode(roleCode)) {
+                                  setRoleDrafts((currentDrafts) => ({
+                                    ...currentDrafts,
+                                    [member.id]: roleCode,
+                                  }));
                                 }
                               }}
                             >
-                              {CLINIC_MEMBER_ROLES.map(
-                                (role) => (
-                                  <option
-                                    key={role.code}
-                                    value={role.code}
-                                  >
-                                    {role.label}
-                                  </option>
-                                ),
-                              )}
+                              {CLINIC_MEMBER_ROLES.map((role) => (
+                                <option key={role.code} value={role.code}>
+                                  {role.label}
+                                </option>
+                              ))}
                             </select>
 
                             {canAssignRole ? (
@@ -656,16 +568,11 @@ export function ClinicMembersManager({
                                 type="button"
                                 variant="outline"
                                 disabled={
-                                  isBusy ||
-                                  roleDraft ===
-                                    member.role.code
+                                  isBusy || roleDraft === member.role.code
                                 }
-                                onClick={() =>
-                                  handleRoleUpdate(member)
-                                }
+                                onClick={() => handleRoleUpdate(member)}
                               >
-                                {pendingAction ===
-                                `role:${member.id}`
+                                {pendingAction === `role:${member.id}`
                                   ? "Salvando..."
                                   : "Salvar perfil"}
                               </Button>
@@ -677,21 +584,15 @@ export function ClinicMembersManager({
                           <Button
                             type="button"
                             variant={
-                              member.isActive
-                                ? "destructive"
-                                : "outline"
+                              member.isActive ? "destructive" : "outline"
                             }
                             disabled={
                               isBusy ||
-                              (!member.isActive &&
-                                !member.user.isActive)
+                              (!member.isActive && !member.user.isActive)
                             }
-                            onClick={() =>
-                              handleStatusUpdate(member)
-                            }
+                            onClick={() => handleStatusUpdate(member)}
                           >
-                            {pendingAction ===
-                            `status:${member.id}`
+                            {pendingAction === `status:${member.id}`
                               ? "Salvando..."
                               : member.isActive
                                 ? "Inativar vínculo"
@@ -702,9 +603,8 @@ export function ClinicMembersManager({
 
                       {!member.user.isActive ? (
                         <p className="mt-3 text-xs text-muted-foreground">
-                          O vínculo não poderá ser ativado
-                          enquanto o usuário estiver globalmente
-                          inativo.
+                          O vínculo não poderá ser ativado enquanto o usuário
+                          estiver globalmente inativo.
                         </p>
                       ) : null}
                     </section>
