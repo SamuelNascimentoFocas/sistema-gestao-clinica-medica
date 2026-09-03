@@ -1,8 +1,4 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import type { DateTime } from 'luxon'
-import ClinicProfessional from '#models/clinic_professional'
-import ProfessionalScheduleBlock from '#models/professional_schedule_block'
-import ProfessionalWeeklyAvailability from '#models/professional_weekly_availability'
 import {
   createScheduleBlockValidator,
   createWeeklyAvailabilityValidator,
@@ -11,85 +7,18 @@ import {
   updateWeeklyAvailabilityValidator,
 } from '#validators/professional_schedule'
 
-async function loadSchedule({
-  clinicId,
-  professionalId,
-}: {
-  clinicId: string
-  professionalId: string
-}) {
-  return ClinicProfessional.query()
-    .where('clinic_id', clinicId)
-    .where('professional_id', professionalId)
-    .preload('clinic')
-    .preload('professional')
-    .preload('weeklyAvailabilities', (query) => {
-      query.orderBy('weekday', 'asc').orderBy('start_time', 'asc')
-    })
-    .preload('scheduleBlocks', (query) => {
-      query.orderBy('starts_at', 'asc')
-    })
-    .first()
-}
-
-async function findAvailabilityOverlap({
-  clinicProfessionalId,
-  weekday,
-  startTime,
-  endTime,
-  excludeId,
-}: {
-  clinicProfessionalId: string
-  weekday: number
-  startTime: string
-  endTime: string
-  excludeId?: string
-}) {
-  const query = ProfessionalWeeklyAvailability.query()
-    .where('clinic_professional_id', clinicProfessionalId)
-    .where('weekday', weekday)
-    .where('is_active', true)
-    .where('start_time', '<', endTime)
-    .where('end_time', '>', startTime)
-
-  if (excludeId) {
-    query.whereNot('id', excludeId)
-  }
-
-  return query.first()
-}
-
-async function findBlockOverlap({
-  clinicProfessionalId,
-  startsAt,
-  endsAt,
-  excludeId,
-}: {
-  clinicProfessionalId: string
-  startsAt: DateTime
-  endsAt: DateTime
-  excludeId?: string
-}) {
-  const query = ProfessionalScheduleBlock.query()
-    .where('clinic_professional_id', clinicProfessionalId)
-    .where('is_active', true)
-    .where('starts_at', '<', endsAt.toSQL()!)
-    .where('ends_at', '>', startsAt.toSQL()!)
-
-  if (excludeId) {
-    query.whereNot('id', excludeId)
-  }
-
-  return query.first()
-}
-
-function hasValidTimeOrder(startTime: string, endTime: string) {
-  return startTime < endTime
-}
-
-function hasValidDateOrder(startsAt: DateTime, endsAt: DateTime) {
-  return startsAt.toMillis() < endsAt.toMillis()
-}
+import {
+  loadSchedule,
+  findWeeklyAvailability,
+  findScheduleBlock,
+  createWeeklyAvailability,
+  updateWeeklyAvailability,
+  setWeeklyAvailabilityStatus,
+  createScheduleBlock,
+  updateScheduleBlock,
+  setScheduleBlockStatus,
+} from '#services/professional_schedule_service'
+import { respondToDomainError } from '#controllers/helpers/domain_error_response'
 
 export default class ProfessionalSchedulesController {
   async show({ clinicAuthorization, params, response }: HttpContext) {
@@ -124,36 +53,15 @@ export default class ProfessionalSchedulesController {
 
     const payload = await request.validateUsing(createWeeklyAvailabilityValidator)
 
-    if (!hasValidTimeOrder(payload.startTime, payload.endTime)) {
-      return response.unprocessableEntity({
-        message: 'O horário inicial deve ser anterior ao horário final',
+    try {
+      const availability = await createWeeklyAvailability(scheduleProfessional.id, payload)
+
+      return response.created({
+        availability: availability.serialize(),
       })
+    } catch (error) {
+      return respondToDomainError(error, response)
     }
-
-    const overlap = await findAvailabilityOverlap({
-      clinicProfessionalId: scheduleProfessional.id,
-      weekday: payload.weekday,
-      startTime: payload.startTime,
-      endTime: payload.endTime,
-    })
-
-    if (overlap) {
-      return response.conflict({
-        message: 'O período informado conflita com outro horário ativo',
-      })
-    }
-
-    const availability = await ProfessionalWeeklyAvailability.create({
-      clinicProfessionalId: scheduleProfessional.id,
-      weekday: payload.weekday,
-      startTime: payload.startTime,
-      endTime: payload.endTime,
-      isActive: true,
-    })
-
-    return response.created({
-      availability: availability.serialize(),
-    })
   }
 
   async updateWeeklyAvailability({ scheduleProfessional, params, request, response }: HttpContext) {
@@ -171,54 +79,19 @@ export default class ProfessionalSchedulesController {
       })
     }
 
-    const availability = await ProfessionalWeeklyAvailability.query()
-      .where('id', params.availabilityId)
-      .where('clinic_professional_id', scheduleProfessional.id)
-      .first()
+    try {
+      const availability = await updateWeeklyAvailability(
+        scheduleProfessional.id,
+        params.availabilityId,
+        payload
+      )
 
-    if (!availability) {
-      return response.notFound({
-        message: 'Horário semanal não encontrado',
+      return response.ok({
+        availability: availability.serialize(),
       })
+    } catch (error) {
+      return respondToDomainError(error, response)
     }
-
-    const weekday = payload.weekday ?? availability.weekday
-    const startTime = payload.startTime ?? availability.startTime
-    const endTime = payload.endTime ?? availability.endTime
-
-    if (!hasValidTimeOrder(startTime, endTime)) {
-      return response.unprocessableEntity({
-        message: 'O horário inicial deve ser anterior ao horário final',
-      })
-    }
-
-    if (availability.isActive) {
-      const overlap = await findAvailabilityOverlap({
-        clinicProfessionalId: scheduleProfessional.id,
-        weekday,
-        startTime,
-        endTime,
-        excludeId: availability.id,
-      })
-
-      if (overlap) {
-        return response.conflict({
-          message: 'O período informado conflita com outro horário ativo',
-        })
-      }
-    }
-
-    availability.merge({
-      weekday,
-      startTime,
-      endTime,
-    })
-
-    await availability.save()
-
-    return response.ok({
-      availability: availability.serialize(),
-    })
   }
 
   async updateWeeklyAvailabilityStatus({
@@ -233,10 +106,10 @@ export default class ProfessionalSchedulesController {
       })
     }
 
-    const availability = await ProfessionalWeeklyAvailability.query()
-      .where('id', params.availabilityId)
-      .where('clinic_professional_id', scheduleProfessional.id)
-      .first()
+    const availability = await findWeeklyAvailability(
+      scheduleProfessional.id,
+      params.availabilityId
+    )
 
     if (!availability) {
       return response.notFound({
@@ -246,28 +119,19 @@ export default class ProfessionalSchedulesController {
 
     const { isActive } = await request.validateUsing(updateScheduleItemStatusValidator)
 
-    if (isActive) {
-      const overlap = await findAvailabilityOverlap({
-        clinicProfessionalId: scheduleProfessional.id,
-        weekday: availability.weekday,
-        startTime: availability.startTime,
-        endTime: availability.endTime,
-        excludeId: availability.id,
+    try {
+      const updatedItem = await setWeeklyAvailabilityStatus(
+        scheduleProfessional.id,
+        availability,
+        isActive
+      )
+
+      return response.ok({
+        availability: updatedItem.serialize(),
       })
-
-      if (overlap) {
-        return response.conflict({
-          message: 'O período informado conflita com outro horário ativo',
-        })
-      }
+    } catch (error) {
+      return respondToDomainError(error, response)
     }
-
-    availability.isActive = isActive
-    await availability.save()
-
-    return response.ok({
-      availability: availability.serialize(),
-    })
   }
 
   async storeScheduleBlock({ scheduleProfessional, request, response }: HttpContext) {
@@ -279,35 +143,15 @@ export default class ProfessionalSchedulesController {
 
     const payload = await request.validateUsing(createScheduleBlockValidator)
 
-    if (!hasValidDateOrder(payload.startsAt, payload.endsAt)) {
-      return response.unprocessableEntity({
-        message: 'O início do bloqueio deve ser anterior ao fim',
+    try {
+      const scheduleBlock = await createScheduleBlock(scheduleProfessional.id, payload)
+
+      return response.created({
+        scheduleBlock: scheduleBlock.serialize(),
       })
+    } catch (error) {
+      return respondToDomainError(error, response)
     }
-
-    const overlap = await findBlockOverlap({
-      clinicProfessionalId: scheduleProfessional.id,
-      startsAt: payload.startsAt,
-      endsAt: payload.endsAt,
-    })
-
-    if (overlap) {
-      return response.conflict({
-        message: 'O período informado conflita com outro bloqueio ativo',
-      })
-    }
-
-    const scheduleBlock = await ProfessionalScheduleBlock.create({
-      clinicProfessionalId: scheduleProfessional.id,
-      startsAt: payload.startsAt,
-      endsAt: payload.endsAt,
-      reason: payload.reason ?? null,
-      isActive: true,
-    })
-
-    return response.created({
-      scheduleBlock: scheduleBlock.serialize(),
-    })
   }
 
   async updateScheduleBlock({ scheduleProfessional, params, request, response }: HttpContext) {
@@ -325,52 +169,19 @@ export default class ProfessionalSchedulesController {
       })
     }
 
-    const scheduleBlock = await ProfessionalScheduleBlock.query()
-      .where('id', params.blockId)
-      .where('clinic_professional_id', scheduleProfessional.id)
-      .first()
+    try {
+      const scheduleBlock = await updateScheduleBlock(
+        scheduleProfessional.id,
+        params.blockId,
+        payload
+      )
 
-    if (!scheduleBlock) {
-      return response.notFound({
-        message: 'Bloqueio de agenda não encontrado',
+      return response.ok({
+        scheduleBlock: scheduleBlock.serialize(),
       })
+    } catch (error) {
+      return respondToDomainError(error, response)
     }
-
-    const startsAt = payload.startsAt ?? scheduleBlock.startsAt
-    const endsAt = payload.endsAt ?? scheduleBlock.endsAt
-
-    if (!hasValidDateOrder(startsAt, endsAt)) {
-      return response.unprocessableEntity({
-        message: 'O início do bloqueio deve ser anterior ao fim',
-      })
-    }
-
-    if (scheduleBlock.isActive) {
-      const overlap = await findBlockOverlap({
-        clinicProfessionalId: scheduleProfessional.id,
-        startsAt,
-        endsAt,
-        excludeId: scheduleBlock.id,
-      })
-
-      if (overlap) {
-        return response.conflict({
-          message: 'O período informado conflita com outro bloqueio ativo',
-        })
-      }
-    }
-
-    scheduleBlock.merge({
-      startsAt,
-      endsAt,
-      reason: payload.reason !== undefined ? payload.reason : scheduleBlock.reason,
-    })
-
-    await scheduleBlock.save()
-
-    return response.ok({
-      scheduleBlock: scheduleBlock.serialize(),
-    })
   }
 
   async updateScheduleBlockStatus({
@@ -385,10 +196,7 @@ export default class ProfessionalSchedulesController {
       })
     }
 
-    const scheduleBlock = await ProfessionalScheduleBlock.query()
-      .where('id', params.blockId)
-      .where('clinic_professional_id', scheduleProfessional.id)
-      .first()
+    const scheduleBlock = await findScheduleBlock(scheduleProfessional.id, params.blockId)
 
     if (!scheduleBlock) {
       return response.notFound({
@@ -398,26 +206,18 @@ export default class ProfessionalSchedulesController {
 
     const { isActive } = await request.validateUsing(updateScheduleItemStatusValidator)
 
-    if (isActive) {
-      const overlap = await findBlockOverlap({
-        clinicProfessionalId: scheduleProfessional.id,
-        startsAt: scheduleBlock.startsAt,
-        endsAt: scheduleBlock.endsAt,
-        excludeId: scheduleBlock.id,
+    try {
+      const updatedItem = await setScheduleBlockStatus(
+        scheduleProfessional.id,
+        scheduleBlock,
+        isActive
+      )
+
+      return response.ok({
+        scheduleBlock: updatedItem.serialize(),
       })
-
-      if (overlap) {
-        return response.conflict({
-          message: 'O período informado conflita com outro bloqueio ativo',
-        })
-      }
+    } catch (error) {
+      return respondToDomainError(error, response)
     }
-
-    scheduleBlock.isActive = isActive
-    await scheduleBlock.save()
-
-    return response.ok({
-      scheduleBlock: scheduleBlock.serialize(),
-    })
   }
 }
