@@ -182,9 +182,70 @@ precedência de 404 sobre body inválido quando o recurso não existe.
   `Cache-Control: private, no-store` permanecem na camada HTTP. Chaves, disco e hash
   privados continuam fora da resposta pública de anexos.
 
-Os contratos de rotas e validators da Fase 1 não foram alterados. A reorganização
-Resource Controllers/ações especializadas e os Route Groups continuam reservados
-às fases seguintes.
+Os contratos de rotas e validators da Fase 1 não foram alterados.
+
+#### Resource Controllers e comandos especializados (Fase 4 — B01/B02)
+
+Os controllers de recursos usam somente as actions semanticamente aplicáveis.
+Não são criadas operações de exclusão para recursos com ativação, transição de
+estado ou preservação histórica. A sessão mantém `destroy`, pois revoga o token.
+
+| Controller de recurso/leitura | Actions |
+| --- | --- |
+| `UsersController`, `ClinicsController`, `ClinicMembershipsController` | `index`, `store`, `show`, `update` |
+| `PatientsController`, `ProfessionalsController`, `AppointmentsController` | `index`, `store`, `show`, `update` |
+| `ClinicMembersController` | `index`, `store` |
+| `MedicalRecordsController`, `ProfessionalSchedulesController`, `ClinicContextsController` | `show` |
+| `MedicalRecordEntriesController` | `store`, `show` |
+| `MedicalRecordAttachmentsController` | `index`, `store` |
+| `ProfessionalWeeklyAvailabilitiesController`, `ProfessionalScheduleBlocksController` | `store`, `update` |
+| `AuditLogsController`, `UserClinicsController` | `index` |
+| `SessionsController` | `store`, `show`, `destroy` |
+
+O prontuário e a agenda são agregados singulares: `show` apresenta seu conteúdo.
+Entradas clínicas, disponibilidades e bloqueios são recursos próprios; não se
+confundem com a edição do prontuário ou da agenda agregada. A correção de uma
+entrada continua sendo um comando que preserva o original, nunca um `update`.
+
+| Controller especializado | Actions e responsabilidade | Origem |
+| --- | --- | --- |
+| `UserStatusController` | `updateStatus`: ativação do usuário | `UsersController` |
+| `ClinicStatusController` | `updateStatus`: ativação da clínica | `ClinicsController` |
+| `ClinicMembershipStatusController` | `updateStatus`: ativação do vínculo pelo administrador global | `ClinicMembershipsController` |
+| `ClinicMemberAccessController` | `updateRole`, `updateStatus`: administração local de perfil/acesso | `ClinicMembersController` |
+| `PatientLinkStatusController` | `updateStatus`: ativação do vínculo paciente-clínica | `PatientsController` |
+| `ProfessionalLinkStatusController` | `updateStatus`: ativação do vínculo profissional-clínica | `ProfessionalsController` |
+| `AppointmentStatusController` | `confirm`, `cancel`, `complete`, `markNoShow`: transições da consulta | `AppointmentsController` |
+| `AppointmentReschedulingController` | `reschedule`: reagendamento com preservação da consulta anterior | `AppointmentsController` |
+| `ProfessionalScheduleStatusController` | `updateWeeklyAvailabilityStatus`, `updateScheduleBlockStatus`: ativação dos itens de agenda | `ProfessionalSchedulesController` |
+| `MedicalRecordCorrectionsController` | `correct`: correção clínica imutável | `MedicalRecordsController.correctEntry` |
+| `MedicalRecordAttachmentDownloadsController` | `download`: resposta binária e headers seguros | `MedicalRecordAttachmentsController` |
+
+Comandos mantêm nomes explícitos, sem serem artificialmente transformados em CRUD.
+As quatro transições de consulta ficam juntas; perfil/status local e ativação dos
+dois tipos de item de agenda também permanecem agrupados por responsabilidade.
+
+A listagem `ClinicContextsController.members` passa a `ClinicMembersController.index`,
+sem mudar a resposta de `GET /api/v1/clinics/:clinicId/members` nem acrescentar
+paginação. `showEntry`/`storeEntry` passam a `MedicalRecordEntriesController.show`/
+`store`; criação/edição de disponibilidades e bloqueios passam a `store`/`update`
+dos respectivos controllers. Nenhum corpo de action é reescrito: preservam-se
+parâmetros, precedência de busca/validação, validators, respostas e erros.
+
+Os Services aprovados na Fase 3 permanecem inalterados. Apenas as duas consultas
+auxiliares já existentes de membros são reunidas em `clinic_member_query_service.ts`,
+evitando duplicação entre criação e administração de acesso; seus filtros,
+relações e resultados são mantidos. Regras administrativas ainda preexistentes
+nos controllers não são reescritas nesta reorganização. Nenhuma regra é movida
+de Service para controller. A formatação de `Content-Disposition` acompanha o
+download, enquanto serialização pública e compensação de upload permanecem na
+fronteira HTTP original.
+
+O total passa de 14 para 28 controllers, mantendo 58 actions e a rota raiz inline.
+Em `start/routes.ts`, mudam somente imports e 24 referências a handlers. Não se
+usa `router.resource()`, para evitar rotas extras ou mudanças de método/path.
+Os grupos, prefixos, UUID matchers e middlewares, inclusive sua ordem, permanecem
+inalterados. Route Groups continuam reservados à Fase 5; factories, à Fase 6.
 
 #### Migrations
 
@@ -699,6 +760,16 @@ e construção da resposta). Os dois testes de contratos também passaram,
 preservando 59 rotas e 46 contratos de validação. A execução utilizou somente
 `clinic_phase3_suite_20260902`, no cluster temporário independente em
 `127.0.0.1:55432`, com aplicação e rollback das 25 migrations aprovadas.
+
+Na Fase 4, passaram novamente os **91 testes funcionais** e os dois testes de
+contratos (59 rotas e 46 contratos de validação), sem alterar testes ou fixtures.
+Antes da suíte completa, passaram duas seleções dos módulos afetados: 43 testes
+clínicos e 16 administrativos. A validação utilizou exclusivamente o novo banco
+`clinic_phase4_suite_20260902`, no mesmo cluster temporário independente em
+`127.0.0.1:55432`, com conferência do destino efetivo antes de cada execução.
+Uma comparação sintática adicional confirmou parâmetros/corpos idênticos nas
+58 actions e somente substituições de imports/handlers nas rotas. Esse diagnóstico
+não foi convertido em teste que congele a organização interna dos controllers.
 
 ## 19. Builds
 
