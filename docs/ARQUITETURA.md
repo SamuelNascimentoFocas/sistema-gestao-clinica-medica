@@ -343,6 +343,52 @@ BACKEND_API_URL=http://localhost:3333
 
 é usada no servidor Next.js e não precisa ser exposta ao navegador.
 
+### HTTP no navegador — Fase 7
+
+As chamadas dos Client Components usam a instância Axios 1.20.0 importável em
+`frontend/src/lib/client/browser-api.ts`. Não há Provider/Context adicional.
+O fluxo continua sendo navegador → BFF Next.js (`/api/...`) → AdonisJS;
+Server Components continuam consultando os helpers server-side.
+
+- `baseURL: "/"` e uma guarda de URLs relativas `/api/` evitam configurar esse
+  cliente para chamar diretamente o backend ou outro host.
+- O adaptador fetch do Axios mantém as três leituras com `cache: "no-store"`.
+  Credenciais mantêm o padrão `same-origin` desse adaptador, sem configurar
+  `withCredentials: true` ou `false`.
+- O navegador não lê nem injeta bearer tokens. O BFF continua lendo o cookie
+  HttpOnly e acrescentando Authorization somente no servidor. Cookies, CORS e
+  a verificação existente de origem das mutações não foram modificados.
+- A inserção automática de XSRF do Axios fica desativada; não se introduz uma
+  nova convenção de cookie/header. O cliente também não acrescenta User-Agent
+  nem escolhe Content-Type automaticamente; os headers JSON existentes ficam
+  nas chamadas e o runtime define o multipart de FormData.
+- `validateStatus` mantém respostas HTTP disponíveis aos ramos existentes da
+  UI; `isSuccessfulResponse` reconhece apenas 2xx. Os status 400/401/403/404/
+  409/422/500 e seus corpos não são convertidos em uma mensagem genérica.
+  Falhas de rede continuam rejeitando, agora como AxiosError (`ERR_NETWORK`);
+  cancelamento nativo continua distinguível (`ERR_CANCELED`). Não há retries,
+  redirects globais ou timeout novo.
+- `readBrowserJson` retorna `unknown` e rejeita JSON inválido. Cada consumidor
+  mantém sua decisão anterior de usar fallback ou tratar falha de parsing.
+  O download usa `responseType: "blob"`; erros JSON recebidos como blob também
+  são decodificados. Nome do arquivo, clique e revogação da URL são preservados.
+- FormData continua enviando `files[]`, sem boundary manual. Não há novo fluxo
+  de cancelamento na UI: o inventário não encontrou consumidores de AbortSignal.
+
+Inventário: 31 chamadas diretas a fetch em 25 arquivos, sendo 30 no navegador
+em 24 arquivos e uma server-side. Foram migradas as 30 chamadas: autenticação
+(2), membros (3), pacientes (4), profissionais (4), agendas (7), consultas (4)
+e prontuários/anexos (6). Permanece uma chamada direta a fetch em
+`frontend/src/lib/server/backend-api.ts`, reutilizada pelo BFF e pelos helpers
+server-side, com URL do backend e `cache: "no-store"`. Ela não é código browser.
+
+O frontend possui oito testes focados em `frontend/tests/browser-api.test.mjs`,
+executados com `npm test` e o runner nativo `node:test`, no Node.js 24.15.0 já
+utilizado pelo projeto. Exercitam o adaptador real com transporte simulado,
+sem servidor ou banco: JSON/same-origin, query/cache, guarda de URL, status/erros,
+parsing, FormData, blob e signal. Não são testes de renderização React ou E2E.
+Nenhuma dependência de testes foi adicionada. Next.js e React não foram atualizados.
+
 ### Proteção de interface
 
 A interface:
@@ -902,7 +948,7 @@ O MVP não possui:
 - serviço de backup;
 - recuperação automatizada;
 - especificação OpenAPI;
-- testes automatizados próprios no frontend;
+- testes de renderização de componentes e E2E no frontend;
 - dashboard analítico avançado.
 
 Essas ausências não impedem a validação acadêmica local, mas precisam ser tratadas antes de uma implantação real.
@@ -914,7 +960,7 @@ Evoluções posteriores podem incluir:
 - dashboard analítico;
 - Docker e Docker Compose;
 - OpenAPI;
-- testes de frontend;
+- ampliação dos testes de frontend além da camada HTTP;
 - testes end-to-end;
 - armazenamento em objeto;
 - backups e restauração;

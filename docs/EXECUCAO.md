@@ -386,10 +386,21 @@ A suíte de testes aplica as migrations automaticamente antes da execução e re
 cd frontend
 npm run typecheck
 npm run lint
+npm test
 npm run build
 ```
 
-O frontend não possui atualmente scripts próprios de testes automatizados ou formatação.
+`npm test` executa os oito testes focados da camada HTTP browser/Axios com
+`node:test`, sem iniciar Next.js, backend ou PostgreSQL. Usa a execução nativa de
+TypeScript do Node.js 24.15.0 listado nos pré-requisitos, sem runner adicional.
+O Node pode emitir `MODULE_TYPELESS_PACKAGE_JSON` ao detectar o módulo TypeScript:
+é um aviso de autodetecção ESM, não uma falha. Não se alterou o tipo de módulos
+de todo o projeto apenas para eliminar esse aviso.
+
+O frontend continua sem script `format` ou configuração própria de Prettier;
+não é necessário reformatar o projeto inteiro para executar esses checks.
+O build existente usa `next/font` para Geist e precisa conseguir obter as fontes
+do Google Fonts quando elas não estiverem disponíveis no cache.
 
 ## 16. Execução local após build
 
