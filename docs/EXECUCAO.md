@@ -390,8 +390,10 @@ npm test
 npm run build
 ```
 
-`npm test` executa os oito testes focados da camada HTTP browser/Axios com
-`node:test`, sem iniciar Next.js, backend ou PostgreSQL. Usa a execução nativa de
+`npm test` executa 22 testes focados: oito da camada HTTP browser/Axios e 14 de
+schemas/resolver/estado dos formulários RHF/Zod, descritos em
+[FORMULARIOS.md](FORMULARIOS.md). Usa `node:test`, sem iniciar Next.js, backend
+ou PostgreSQL, e a execução nativa de
 TypeScript do Node.js 24.15.0 listado nos pré-requisitos, sem runner adicional.
 O Node pode emitir `MODULE_TYPELESS_PACKAGE_JSON` ao detectar o módulo TypeScript:
 é um aviso de autodetecção ESM, não uma falha. Não se alterou o tipo de módulos

@@ -190,36 +190,36 @@ Os controllers de recursos usam somente as actions semanticamente aplicáveis.
 Não são criadas operações de exclusão para recursos com ativação, transição de
 estado ou preservação histórica. A sessão mantém `destroy`, pois revoga o token.
 
-| Controller de recurso/leitura | Actions |
-| --- | --- |
-| `UsersController`, `ClinicsController`, `ClinicMembershipsController` | `index`, `store`, `show`, `update` |
-| `PatientsController`, `ProfessionalsController`, `AppointmentsController` | `index`, `store`, `show`, `update` |
-| `ClinicMembersController` | `index`, `store` |
-| `MedicalRecordsController`, `ProfessionalSchedulesController`, `ClinicContextsController` | `show` |
-| `MedicalRecordEntriesController` | `store`, `show` |
-| `MedicalRecordAttachmentsController` | `index`, `store` |
-| `ProfessionalWeeklyAvailabilitiesController`, `ProfessionalScheduleBlocksController` | `store`, `update` |
-| `AuditLogsController`, `UserClinicsController` | `index` |
-| `SessionsController` | `store`, `show`, `destroy` |
+| Controller de recurso/leitura                                                             | Actions                            |
+| ----------------------------------------------------------------------------------------- | ---------------------------------- |
+| `UsersController`, `ClinicsController`, `ClinicMembershipsController`                     | `index`, `store`, `show`, `update` |
+| `PatientsController`, `ProfessionalsController`, `AppointmentsController`                 | `index`, `store`, `show`, `update` |
+| `ClinicMembersController`                                                                 | `index`, `store`                   |
+| `MedicalRecordsController`, `ProfessionalSchedulesController`, `ClinicContextsController` | `show`                             |
+| `MedicalRecordEntriesController`                                                          | `store`, `show`                    |
+| `MedicalRecordAttachmentsController`                                                      | `index`, `store`                   |
+| `ProfessionalWeeklyAvailabilitiesController`, `ProfessionalScheduleBlocksController`      | `store`, `update`                  |
+| `AuditLogsController`, `UserClinicsController`                                            | `index`                            |
+| `SessionsController`                                                                      | `store`, `show`, `destroy`         |
 
 O prontuário e a agenda são agregados singulares: `show` apresenta seu conteúdo.
 Entradas clínicas, disponibilidades e bloqueios são recursos próprios; não se
 confundem com a edição do prontuário ou da agenda agregada. A correção de uma
 entrada continua sendo um comando que preserva o original, nunca um `update`.
 
-| Controller especializado | Actions e responsabilidade | Origem |
-| --- | --- | --- |
-| `UserStatusController` | `updateStatus`: ativação do usuário | `UsersController` |
-| `ClinicStatusController` | `updateStatus`: ativação da clínica | `ClinicsController` |
-| `ClinicMembershipStatusController` | `updateStatus`: ativação do vínculo pelo administrador global | `ClinicMembershipsController` |
-| `ClinicMemberAccessController` | `updateRole`, `updateStatus`: administração local de perfil/acesso | `ClinicMembersController` |
-| `PatientLinkStatusController` | `updateStatus`: ativação do vínculo paciente-clínica | `PatientsController` |
-| `ProfessionalLinkStatusController` | `updateStatus`: ativação do vínculo profissional-clínica | `ProfessionalsController` |
-| `AppointmentStatusController` | `confirm`, `cancel`, `complete`, `markNoShow`: transições da consulta | `AppointmentsController` |
-| `AppointmentReschedulingController` | `reschedule`: reagendamento com preservação da consulta anterior | `AppointmentsController` |
-| `ProfessionalScheduleStatusController` | `updateWeeklyAvailabilityStatus`, `updateScheduleBlockStatus`: ativação dos itens de agenda | `ProfessionalSchedulesController` |
-| `MedicalRecordCorrectionsController` | `correct`: correção clínica imutável | `MedicalRecordsController.correctEntry` |
-| `MedicalRecordAttachmentDownloadsController` | `download`: resposta binária e headers seguros | `MedicalRecordAttachmentsController` |
+| Controller especializado                     | Actions e responsabilidade                                                                  | Origem                                  |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `UserStatusController`                       | `updateStatus`: ativação do usuário                                                         | `UsersController`                       |
+| `ClinicStatusController`                     | `updateStatus`: ativação da clínica                                                         | `ClinicsController`                     |
+| `ClinicMembershipStatusController`           | `updateStatus`: ativação do vínculo pelo administrador global                               | `ClinicMembershipsController`           |
+| `ClinicMemberAccessController`               | `updateRole`, `updateStatus`: administração local de perfil/acesso                          | `ClinicMembersController`               |
+| `PatientLinkStatusController`                | `updateStatus`: ativação do vínculo paciente-clínica                                        | `PatientsController`                    |
+| `ProfessionalLinkStatusController`           | `updateStatus`: ativação do vínculo profissional-clínica                                    | `ProfessionalsController`               |
+| `AppointmentStatusController`                | `confirm`, `cancel`, `complete`, `markNoShow`: transições da consulta                       | `AppointmentsController`                |
+| `AppointmentReschedulingController`          | `reschedule`: reagendamento com preservação da consulta anterior                            | `AppointmentsController`                |
+| `ProfessionalScheduleStatusController`       | `updateWeeklyAvailabilityStatus`, `updateScheduleBlockStatus`: ativação dos itens de agenda | `ProfessionalSchedulesController`       |
+| `MedicalRecordCorrectionsController`         | `correct`: correção clínica imutável                                                        | `MedicalRecordsController.correctEntry` |
+| `MedicalRecordAttachmentDownloadsController` | `download`: resposta binária e headers seguros                                              | `MedicalRecordAttachmentsController`    |
 
 Comandos mantêm nomes explícitos, sem serem artificialmente transformados em CRUD.
 As quatro transições de consulta ficam juntas; perfil/status local e ativação dos
@@ -388,6 +388,24 @@ utilizado pelo projeto. Exercitam o adaptador real com transporte simulado,
 sem servidor ou banco: JSON/same-origin, query/cache, guarda de URL, status/erros,
 parsing, FormData, blob e signal. Não são testes de renderização React ou E2E.
 Nenhuma dependência de testes foi adicionada. Next.js e React não foram atualizados.
+
+### Formulários — Fase 8
+
+React Hook Form 7.87.0 e Zod 4.4.3, integrados por resolvers 5.9.1, gerenciam
+17 dos 22 formulários existentes. Os quatro filtros e o upload permanecem
+inalterados. Create/edit continuam separados e não foram introduzidos Dialog,
+DataTable ou componentes de navegação.
+
+Os schemas de `frontend/src/lib/forms/form-schemas.ts` validam valores do browser
+sem normalizar payloads. Inputs shadcn/Base UI usam Controller; controles nativos
+usam register. As regras HTML, os serializers, erros backend, defaults/resets,
+strings vazias e conversões de datas/fusos continuam preservados. O componente
+mínimo FormFieldError associa erros locais aos campos de forma acessível.
+
+O inventário, os 14 schemas, as diferenças browser/BFF/Vine deliberadamente
+mantidas e os testes focados estão em [FORMULARIOS.md](FORMULARIOS.md).
+O runner frontend soma 22 testes (oito HTTP e 14 de formulários), sem infraestrutura
+nova de componentes/E2E. Backend e BFF não foram modificados nesta fase.
 
 ### Proteção de interface
 
@@ -960,7 +978,7 @@ Evoluções posteriores podem incluir:
 - dashboard analítico;
 - Docker e Docker Compose;
 - OpenAPI;
-- ampliação dos testes de frontend além da camada HTTP;
+- ampliação dos testes de frontend além da camada HTTP e dos schemas/estado de formulários;
 - testes end-to-end;
 - armazenamento em objeto;
 - backups e restauração;
