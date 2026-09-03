@@ -1,5 +1,10 @@
 "use client";
 
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { weeklyAvailabilityFormSchema } from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
 import {
   browserApi,
   isSuccessfulResponse,
@@ -7,7 +12,7 @@ import {
   type BrowserResponse,
 } from "@/lib/client/browser-api";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -30,14 +35,11 @@ import {
 type CreateWeeklyAvailabilityCardProps = {
   clinicId: string;
   professionalId: string;
-  onCreated: (
-    availability: ProfessionalWeeklyAvailability,
-  ) => void;
+  onCreated: (availability: ProfessionalWeeklyAvailability) => void;
 };
 
 async function readResponseMessage(response: BrowserResponse) {
-  const body: unknown = await readBrowserJson(response)
-    .catch(() => null);
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -60,33 +62,25 @@ export function CreateWeeklyAvailabilityCard({
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const [formValues, setFormValues] =
-    useState<WeeklyAvailabilityFormValues>({
+  const {
+    control,
+    register,
+    reset,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isSaving },
+  } = useForm<WeeklyAvailabilityFormValues>({
+    resolver: zodResolver(weeklyAvailabilityFormSchema),
+    defaultValues: {
       ...EMPTY_WEEKLY_AVAILABILITY_FORM,
-    });
+    },
+  });
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  const [successMessage, setSuccessMessage] = useState<
-    string | null
-  >(null);
-
-  function updateField(
-    field: keyof WeeklyAvailabilityFormValues,
-    value: string,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   function resetForm() {
-    setFormValues({
+    reset({
       ...EMPTY_WEEKLY_AVAILABILITY_FORM,
     });
 
@@ -98,12 +92,7 @@ export function CreateWeeklyAvailabilityCard({
     setIsOpen(false);
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setIsSaving(true);
+  async function handleSubmit(formValues: WeeklyAvailabilityFormValues) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -133,29 +122,22 @@ export function CreateWeeklyAvailabilityCard({
       }
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      const body =
-        (await readBrowserJson(response)) as WeeklyAvailabilityResponse;
+      const body = (await readBrowserJson(
+        response,
+      )) as WeeklyAvailabilityResponse;
 
       onCreated(body.availability);
 
       resetForm();
       setIsOpen(false);
-      setSuccessMessage(
-        "Horário semanal cadastrado.",
-      );
+      setSuccessMessage("Horário semanal cadastrado.");
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsSaving(false);
+      setErrorMessage("Não foi possível comunicar com o servidor");
     }
   }
 
@@ -164,13 +146,11 @@ export function CreateWeeklyAvailabilityCard({
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>
-              Configurar disponibilidade semanal
-            </CardTitle>
+            <CardTitle>Configurar disponibilidade semanal</CardTitle>
 
             <CardDescription>
-              Adicione períodos recorrentes em que o
-              profissional poderá realizar atendimentos.
+              Adicione períodos recorrentes em que o profissional poderá
+              realizar atendimentos.
             </CardDescription>
           </div>
 
@@ -187,10 +167,7 @@ export function CreateWeeklyAvailabilityCard({
 
         {successMessage ? (
           <CardContent>
-            <p
-              className="text-sm font-medium text-emerald-700"
-              role="status"
-            >
+            <p className="text-sm font-medium text-emerald-700" role="status">
               {successMessage}
             </p>
           </CardContent>
@@ -205,103 +182,102 @@ export function CreateWeeklyAvailabilityCard({
         <CardTitle>Novo horário semanal</CardTitle>
 
         <CardDescription>
-          Informe o dia da semana e o período de
-          disponibilidade.
+          Informe o dia da semana e o período de disponibilidade.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <form
-          className="space-y-6"
-          onSubmit={handleSubmit}
-        >
+        <form className="space-y-6" onSubmit={submitForm(handleSubmit)}>
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="availability-weekday">
-                Dia da semana
-              </Label>
+              <Label htmlFor="availability-weekday">Dia da semana</Label>
 
               <select
+                {...register("weekday")}
+                aria-invalid={!!errors.weekday}
+                aria-describedby={
+                  errors.weekday ? "availability-weekday-error" : undefined
+                }
                 id="availability-weekday"
-                value={formValues.weekday}
                 disabled={isSaving}
                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  updateField(
-                    "weekday",
-                    event.target.value,
-                  )
-                }
               >
                 {WEEKDAYS.map((weekday) => (
-                  <option
-                    key={weekday.value}
-                    value={weekday.value}
-                  >
+                  <option key={weekday.value} value={weekday.value}>
                     {weekday.label}
                   </option>
                 ))}
               </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="availability-start-time">
-                Horário inicial
-              </Label>
-
-              <Input
-                id="availability-start-time"
-                type="time"
-                required
-                disabled={isSaving}
-                value={formValues.startTime}
-                onChange={(event) =>
-                  updateField(
-                    "startTime",
-                    event.target.value,
-                  )
-                }
+              <FormFieldError
+                id={"availability-weekday-error"}
+                message={errors.weekday?.message}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="availability-end-time">
-                Horário final
-              </Label>
+              <Label htmlFor="availability-start-time">Horário inicial</Label>
 
-              <Input
-                id="availability-end-time"
-                type="time"
-                required
-                disabled={isSaving}
-                value={formValues.endTime}
-                onChange={(event) =>
-                  updateField(
-                    "endTime",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="startTime"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.startTime}
+                    aria-describedby={
+                      errors.startTime
+                        ? "availability-start-time-error"
+                        : undefined
+                    }
+                    id="availability-start-time"
+                    type="time"
+                    required
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"availability-start-time-error"}
+                message={errors.startTime?.message}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="availability-end-time">Horário final</Label>
+
+              <Controller
+                control={control}
+                name="endTime"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.endTime}
+                    aria-describedby={
+                      errors.endTime ? "availability-end-time-error" : undefined
+                    }
+                    id="availability-end-time"
+                    type="time"
+                    required
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"availability-end-time-error"}
+                message={errors.endTime?.message}
               />
             </div>
           </div>
 
           {errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
 
           <div className="flex flex-wrap gap-3">
-            <Button
-              type="submit"
-              disabled={isSaving}
-            >
-              {isSaving
-                ? "Cadastrando..."
-                : "Cadastrar horário"}
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Cadastrando..." : "Cadastrar horário"}
             </Button>
 
             <Button

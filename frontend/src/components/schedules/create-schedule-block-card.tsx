@@ -1,5 +1,10 @@
 "use client";
 
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { scheduleBlockFormSchema } from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
 import {
   browserApi,
   isSuccessfulResponse,
@@ -7,7 +12,7 @@ import {
   type BrowserResponse,
 } from "@/lib/client/browser-api";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,14 +34,11 @@ import {
 type CreateScheduleBlockCardProps = {
   clinicId: string;
   professionalId: string;
-  onCreated: (
-    scheduleBlock: ProfessionalScheduleBlock,
-  ) => void;
+  onCreated: (scheduleBlock: ProfessionalScheduleBlock) => void;
 };
 
 async function readResponseMessage(response: BrowserResponse) {
-  const body: unknown = await readBrowserJson(response)
-    .catch(() => null);
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -59,33 +61,24 @@ export function CreateScheduleBlockCard({
 
   const [isOpen, setIsOpen] = useState(false);
 
-  const [formValues, setFormValues] =
-    useState<ScheduleBlockFormValues>({
+  const {
+    control,
+    reset,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isSaving },
+  } = useForm<ScheduleBlockFormValues>({
+    resolver: zodResolver(scheduleBlockFormSchema),
+    defaultValues: {
       ...EMPTY_SCHEDULE_BLOCK_FORM,
-    });
+    },
+  });
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  const [successMessage, setSuccessMessage] = useState<
-    string | null
-  >(null);
-
-  function updateField(
-    field: keyof ScheduleBlockFormValues,
-    value: string,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   function resetForm() {
-    setFormValues({
+    reset({
       ...EMPTY_SCHEDULE_BLOCK_FORM,
     });
 
@@ -97,46 +90,18 @@ export function CreateScheduleBlockCard({
     setIsOpen(false);
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setIsSaving(true);
+  async function handleSubmit(formValues: ScheduleBlockFormValues) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
     const startsAt = new Date(formValues.startsAt);
     const endsAt = new Date(formValues.endsAt);
 
-    if (
-      Number.isNaN(startsAt.getTime()) ||
-      Number.isNaN(endsAt.getTime())
-    ) {
-      setErrorMessage(
-        "Informe datas e horários válidos",
-      );
-      setIsSaving(false);
-
-      return;
-    }
-
-    if (startsAt.getTime() >= endsAt.getTime()) {
-      setErrorMessage(
-        "O início do bloqueio deve ser anterior ao fim",
-      );
-      setIsSaving(false);
-
-      return;
-    }
-
     try {
       const response = await browserApi.request<string>({
         url: `/api/clinics/${encodeURIComponent(
           clinicId,
-        )}/professionals/${encodeURIComponent(
-          professionalId,
-        )}/schedule-blocks`,
+        )}/professionals/${encodeURIComponent(professionalId)}/schedule-blocks`,
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -156,29 +121,20 @@ export function CreateScheduleBlockCard({
       }
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      const body =
-        (await readBrowserJson(response)) as ScheduleBlockResponse;
+      const body = (await readBrowserJson(response)) as ScheduleBlockResponse;
 
       onCreated(body.scheduleBlock);
 
       resetForm();
       setIsOpen(false);
-      setSuccessMessage(
-        "Bloqueio de agenda cadastrado.",
-      );
+      setSuccessMessage("Bloqueio de agenda cadastrado.");
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsSaving(false);
+      setErrorMessage("Não foi possível comunicar com o servidor");
     }
   }
 
@@ -187,13 +143,11 @@ export function CreateScheduleBlockCard({
       <Card>
         <CardHeader className="gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle>
-              Configurar bloqueios de agenda
-            </CardTitle>
+            <CardTitle>Configurar bloqueios de agenda</CardTitle>
 
             <CardDescription>
-              Registre períodos excepcionais de
-              indisponibilidade do profissional.
+              Registre períodos excepcionais de indisponibilidade do
+              profissional.
             </CardDescription>
           </div>
 
@@ -210,10 +164,7 @@ export function CreateScheduleBlockCard({
 
         {successMessage ? (
           <CardContent>
-            <p
-              className="text-sm font-medium text-emerald-700"
-              role="status"
-            >
+            <p className="text-sm font-medium text-emerald-700" role="status">
               {successMessage}
             </p>
           </CardContent>
@@ -228,95 +179,102 @@ export function CreateScheduleBlockCard({
         <CardTitle>Novo bloqueio</CardTitle>
 
         <CardDescription>
-          Informe o início, o fim e, opcionalmente, o
-          motivo da indisponibilidade.
+          Informe o início, o fim e, opcionalmente, o motivo da
+          indisponibilidade.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <form
-          className="space-y-6"
-          onSubmit={handleSubmit}
-        >
+        <form className="space-y-6" onSubmit={submitForm(handleSubmit)}>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="schedule-block-start">
-                Início
-              </Label>
+              <Label htmlFor="schedule-block-start">Início</Label>
 
-              <Input
-                id="schedule-block-start"
-                type="datetime-local"
-                required
-                disabled={isSaving}
-                value={formValues.startsAt}
-                onChange={(event) =>
-                  updateField(
-                    "startsAt",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="startsAt"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.startsAt}
+                    aria-describedby={
+                      errors.startsAt ? "schedule-block-start-error" : undefined
+                    }
+                    id="schedule-block-start"
+                    type="datetime-local"
+                    required
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"schedule-block-start-error"}
+                message={errors.startsAt?.message}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="schedule-block-end">
-                Fim
-              </Label>
+              <Label htmlFor="schedule-block-end">Fim</Label>
 
-              <Input
-                id="schedule-block-end"
-                type="datetime-local"
-                required
-                disabled={isSaving}
-                value={formValues.endsAt}
-                onChange={(event) =>
-                  updateField(
-                    "endsAt",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="endsAt"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.endsAt}
+                    aria-describedby={
+                      errors.endsAt ? "schedule-block-end-error" : undefined
+                    }
+                    id="schedule-block-end"
+                    type="datetime-local"
+                    required
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"schedule-block-end-error"}
+                message={errors.endsAt?.message}
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="schedule-block-reason">
-                Motivo
-              </Label>
+              <Label htmlFor="schedule-block-reason">Motivo</Label>
 
-              <Input
-                id="schedule-block-reason"
-                maxLength={240}
-                disabled={isSaving}
-                value={formValues.reason}
-                placeholder="Ex.: Congresso médico"
-                onChange={(event) =>
-                  updateField(
-                    "reason",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="reason"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.reason}
+                    aria-describedby={
+                      errors.reason ? "schedule-block-reason-error" : undefined
+                    }
+                    id="schedule-block-reason"
+                    maxLength={240}
+                    disabled={isSaving}
+                    placeholder="Ex.: Congresso médico"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"schedule-block-reason-error"}
+                message={errors.reason?.message}
               />
             </div>
           </div>
 
           {errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
 
           <div className="flex flex-wrap gap-3">
-            <Button
-              type="submit"
-              disabled={isSaving}
-            >
-              {isSaving
-                ? "Cadastrando..."
-                : "Cadastrar bloqueio"}
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Cadastrando..." : "Cadastrar bloqueio"}
             </Button>
 
             <Button

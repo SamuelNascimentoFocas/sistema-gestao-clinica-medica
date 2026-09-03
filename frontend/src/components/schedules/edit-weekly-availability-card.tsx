@@ -1,5 +1,10 @@
 "use client";
 
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { weeklyAvailabilityFormSchema } from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
 import {
   browserApi,
   isSuccessfulResponse,
@@ -7,7 +12,7 @@ import {
   type BrowserResponse,
 } from "@/lib/client/browser-api";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,15 +29,12 @@ type EditWeeklyAvailabilityCardProps = {
   clinicId: string;
   professionalId: string;
   availability: ProfessionalWeeklyAvailability;
-  onUpdated: (
-    availability: ProfessionalWeeklyAvailability,
-  ) => void;
+  onUpdated: (availability: ProfessionalWeeklyAvailability) => void;
   onCancel: () => void;
 };
 
 async function readResponseMessage(response: BrowserResponse) {
-  const body: unknown = await readBrowserJson(response)
-    .catch(() => null);
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -55,33 +57,19 @@ export function EditWeeklyAvailabilityCard({
 }: EditWeeklyAvailabilityCardProps) {
   const router = useRouter();
 
-  const [formValues, setFormValues] =
-    useState<WeeklyAvailabilityFormValues>(() =>
-      weeklyAvailabilityToForm(availability),
-    );
+  const {
+    control,
+    register,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isSaving },
+  } = useForm<WeeklyAvailabilityFormValues>({
+    resolver: zodResolver(weeklyAvailabilityFormSchema),
+    defaultValues: weeklyAvailabilityToForm(availability),
+  });
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  function updateField(
-    field: keyof WeeklyAvailabilityFormValues,
-    value: string,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setIsSaving(true);
+  async function handleSubmit(formValues: WeeklyAvailabilityFormValues) {
     setErrorMessage(null);
 
     try {
@@ -90,9 +78,7 @@ export function EditWeeklyAvailabilityCard({
           clinicId,
         )}/professionals/${encodeURIComponent(
           professionalId,
-        )}/weekly-availabilities/${encodeURIComponent(
-          availability.id,
-        )}`,
+        )}/weekly-availabilities/${encodeURIComponent(availability.id)}`,
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
@@ -112,36 +98,26 @@ export function EditWeeklyAvailabilityCard({
       }
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      const body =
-        (await readBrowserJson(response)) as WeeklyAvailabilityResponse;
+      const body = (await readBrowserJson(
+        response,
+      )) as WeeklyAvailabilityResponse;
 
       onUpdated(body.availability);
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsSaving(false);
+      setErrorMessage("Não foi possível comunicar com o servidor");
     }
   }
 
   return (
     <div className="rounded-md border p-4">
-      <form
-        className="space-y-4"
-        onSubmit={handleSubmit}
-      >
+      <form className="space-y-4" onSubmit={submitForm(handleSubmit)}>
         <div>
-          <h3 className="font-medium">
-            Editar horário semanal
-          </h3>
+          <h3 className="font-medium">Editar horário semanal</h3>
 
           <p className="mt-1 text-sm text-muted-foreground">
             Altere o dia ou o período de disponibilidade.
@@ -150,97 +126,104 @@ export function EditWeeklyAvailabilityCard({
 
         <div className="grid gap-4 md:grid-cols-3">
           <div className="space-y-2">
-            <Label
-              htmlFor={`edit-availability-weekday-${availability.id}`}
-            >
+            <Label htmlFor={`edit-availability-weekday-${availability.id}`}>
               Dia da semana
             </Label>
 
             <select
+              {...register("weekday")}
+              aria-invalid={!!errors.weekday}
+              aria-describedby={
+                errors.weekday
+                  ? `edit-availability-weekday-${availability.id}` + "-error"
+                  : undefined
+              }
               id={`edit-availability-weekday-${availability.id}`}
-              value={formValues.weekday}
               disabled={isSaving}
               className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onChange={(event) =>
-                updateField(
-                  "weekday",
-                  event.target.value,
-                )
-              }
             >
               {WEEKDAYS.map((weekday) => (
-                <option
-                  key={weekday.value}
-                  value={weekday.value}
-                >
+                <option key={weekday.value} value={weekday.value}>
                   {weekday.label}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="space-y-2">
-            <Label
-              htmlFor={`edit-availability-start-${availability.id}`}
-            >
-              Horário inicial
-            </Label>
-
-            <Input
-              id={`edit-availability-start-${availability.id}`}
-              type="time"
-              required
-              disabled={isSaving}
-              value={formValues.startTime}
-              onChange={(event) =>
-                updateField(
-                  "startTime",
-                  event.target.value,
-                )
-              }
+            <FormFieldError
+              id={`edit-availability-weekday-${availability.id}` + "-error"}
+              message={errors.weekday?.message}
             />
           </div>
 
           <div className="space-y-2">
-            <Label
-              htmlFor={`edit-availability-end-${availability.id}`}
-            >
+            <Label htmlFor={`edit-availability-start-${availability.id}`}>
+              Horário inicial
+            </Label>
+
+            <Controller
+              control={control}
+              name="startTime"
+              render={({ field }) => (
+                <Input
+                  {...field}
+                  aria-invalid={!!errors.startTime}
+                  aria-describedby={
+                    errors.startTime
+                      ? `edit-availability-start-${availability.id}` + "-error"
+                      : undefined
+                  }
+                  id={`edit-availability-start-${availability.id}`}
+                  type="time"
+                  required
+                  disabled={isSaving}
+                />
+              )}
+            />
+            <FormFieldError
+              id={`edit-availability-start-${availability.id}` + "-error"}
+              message={errors.startTime?.message}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor={`edit-availability-end-${availability.id}`}>
               Horário final
             </Label>
 
-            <Input
-              id={`edit-availability-end-${availability.id}`}
-              type="time"
-              required
-              disabled={isSaving}
-              value={formValues.endTime}
-              onChange={(event) =>
-                updateField(
-                  "endTime",
-                  event.target.value,
-                )
-              }
+            <Controller
+              control={control}
+              name="endTime"
+              render={({ field }) => (
+                <Input
+                  {...field}
+                  aria-invalid={!!errors.endTime}
+                  aria-describedby={
+                    errors.endTime
+                      ? `edit-availability-end-${availability.id}` + "-error"
+                      : undefined
+                  }
+                  id={`edit-availability-end-${availability.id}`}
+                  type="time"
+                  required
+                  disabled={isSaving}
+                />
+              )}
+            />
+            <FormFieldError
+              id={`edit-availability-end-${availability.id}` + "-error"}
+              message={errors.endTime?.message}
             />
           </div>
         </div>
 
         {errorMessage ? (
-          <p
-            className="text-sm text-destructive"
-            role="alert"
-          >
+          <p className="text-sm text-destructive" role="alert">
             {errorMessage}
           </p>
         ) : null}
 
         <div className="flex flex-wrap gap-3">
-          <Button
-            type="submit"
-            disabled={isSaving}
-          >
-            {isSaving
-              ? "Salvando..."
-              : "Salvar alterações"}
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? "Salvando..." : "Salvar alterações"}
           </Button>
 
           <Button

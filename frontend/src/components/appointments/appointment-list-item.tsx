@@ -1,5 +1,10 @@
 "use client";
 
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { appointmentEditFormSchema } from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
 import {
   browserApi,
   isSuccessfulResponse,
@@ -7,7 +12,7 @@ import {
   type BrowserResponse,
 } from "@/lib/client/browser-api";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -62,8 +67,7 @@ function getStatusClass(status: AppointmentStatus) {
 }
 
 async function readResponseMessage(response: BrowserResponse) {
-  const body: unknown = await readBrowserJson(response)
-    .catch(() => null);
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -82,10 +86,8 @@ function appointmentToForm(
 ): EditAppointmentFormValues {
   return {
     patientClinicId: appointment.patientClinicId,
-    appointmentTypeCode:
-      appointment.appointmentTypeCode ?? "",
-    administrativeNote:
-      appointment.administrativeNote ?? "",
+    appointmentTypeCode: appointment.appointmentTypeCode ?? "",
+    administrativeNote: appointment.administrativeNote ?? "",
   };
 }
 
@@ -102,55 +104,39 @@ export function AppointmentListItem({
 }: AppointmentListItemProps) {
   const router = useRouter();
 
-  const [appointment, setAppointment] =
-    useState(initialAppointment);
+  const [appointment, setAppointment] = useState(initialAppointment);
 
   const [isEditing, setIsEditing] = useState(false);
 
-  const [formValues, setFormValues] =
-    useState<EditAppointmentFormValues>(() =>
-      appointmentToForm(initialAppointment),
-    );
+  const {
+    control,
+    register,
+    reset,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isSaving },
+  } = useForm<EditAppointmentFormValues>({
+    resolver: zodResolver(appointmentEditFormSchema),
+    defaultValues: appointmentToForm(initialAppointment),
+  });
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  const [successMessage, setSuccessMessage] = useState<
-    string | null
-  >(null);
-
-  function updateField(
-    field: keyof EditAppointmentFormValues,
-    value: string,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   function openEditForm() {
-    setFormValues(appointmentToForm(appointment));
+    reset(appointmentToForm(appointment));
     setErrorMessage(null);
     setSuccessMessage(null);
     setIsEditing(true);
   }
 
   function closeEditForm() {
-    setFormValues(appointmentToForm(appointment));
+    reset(appointmentToForm(appointment));
     setErrorMessage(null);
     setIsEditing(false);
   }
 
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setIsSaving(true);
+  async function handleSubmit(formValues: EditAppointmentFormValues) {
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -158,20 +144,15 @@ export function AppointmentListItem({
       const response = await browserApi.request<string>({
         url: `/api/clinics/${encodeURIComponent(
           clinicId,
-        )}/appointments/${encodeURIComponent(
-          appointment.id,
-        )}`,
+        )}/appointments/${encodeURIComponent(appointment.id)}`,
         method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
         data: JSON.stringify({
-          patientClinicId:
-            formValues.patientClinicId,
-          appointmentTypeCode:
-            formValues.appointmentTypeCode,
-          administrativeNote:
-            formValues.administrativeNote,
+          patientClinicId: formValues.patientClinicId,
+          appointmentTypeCode: formValues.appointmentTypeCode,
+          administrativeNote: formValues.administrativeNote,
           expectedVersion: appointment.version,
         }),
       });
@@ -184,38 +165,26 @@ export function AppointmentListItem({
       }
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      const body =
-        (await readBrowserJson(response)) as AppointmentResponse;
+      const body = (await readBrowserJson(response)) as AppointmentResponse;
 
       setAppointment(body.appointment);
-      setFormValues(
-        appointmentToForm(body.appointment),
-      );
+      reset(appointmentToForm(body.appointment));
       setIsEditing(false);
-      setSuccessMessage(
-        "Agendamento atualizado com sucesso.",
-      );
+      setSuccessMessage("Agendamento atualizado com sucesso.");
 
       router.refresh();
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsSaving(false);
+      setErrorMessage("Não foi possível comunicar com o servidor");
     }
   }
 
   const isActiveAppointment =
-    appointment.status === "scheduled" ||
-    appointment.status === "confirmed";
+    appointment.status === "scheduled" || appointment.status === "confirmed";
 
   return (
     <article className="rounded-lg border p-4">
@@ -226,15 +195,8 @@ export function AppointmentListItem({
           </p>
 
           <p className="mt-1 text-sm text-muted-foreground">
-            {formatAppointmentDateTime(
-              appointment.startsAt,
-              clinicTimezone,
-            )}{" "}
-            até{" "}
-            {formatAppointmentDateTime(
-              appointment.endsAt,
-              clinicTimezone,
-            )}
+            {formatAppointmentDateTime(appointment.startsAt, clinicTimezone)}{" "}
+            até {formatAppointmentDateTime(appointment.endsAt, clinicTimezone)}
           </p>
         </div>
 
@@ -243,51 +205,33 @@ export function AppointmentListItem({
             appointment.status,
           )}`}
         >
-          {getAppointmentStatusLabel(
-            appointment.status,
-          )}
+          {getAppointmentStatusLabel(appointment.status)}
         </span>
       </div>
 
       <dl className="mt-4 grid gap-3 border-t pt-4 text-sm md:grid-cols-3">
         <div>
-          <dt className="text-muted-foreground">
-            Profissional
-          </dt>
+          <dt className="text-muted-foreground">Profissional</dt>
 
           <dd className="font-medium">
-            {
-              appointment.clinicProfessional.professional
-                .fullName
-            }
+            {appointment.clinicProfessional.professional.fullName}
           </dd>
         </div>
 
         <div>
-          <dt className="text-muted-foreground">
-            CRM
-          </dt>
+          <dt className="text-muted-foreground">CRM</dt>
 
           <dd className="font-medium">
-            {
-              appointment.clinicProfessional.professional
-                .crmState
-            }{" "}
-            {
-              appointment.clinicProfessional.professional
-                .crmNumber
-            }
+            {appointment.clinicProfessional.professional.crmState}{" "}
+            {appointment.clinicProfessional.professional.crmNumber}
           </dd>
         </div>
 
         <div>
-          <dt className="text-muted-foreground">
-            Tipo
-          </dt>
+          <dt className="text-muted-foreground">Tipo</dt>
 
           <dd className="font-medium">
-            {appointment.appointmentTypeCode ??
-              "Não informado"}
+            {appointment.appointmentTypeCode ?? "Não informado"}
           </dd>
         </div>
       </dl>
@@ -299,23 +243,14 @@ export function AppointmentListItem({
       ) : null}
 
       {successMessage ? (
-        <p
-          className="mt-4 text-sm font-medium text-emerald-700"
-          role="status"
-        >
+        <p className="mt-4 text-sm font-medium text-emerald-700" role="status">
           {successMessage}
         </p>
       ) : null}
 
-      {canEdit &&
-      isActiveAppointment &&
-      !isEditing ? (
+      {canEdit && isActiveAppointment && !isEditing ? (
         <div className="mt-4 border-t pt-4">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={openEditForm}
-          >
+          <Button type="button" variant="outline" onClick={openEditForm}>
             Editar agendamento
           </Button>
         </div>
@@ -324,112 +259,110 @@ export function AppointmentListItem({
       {isEditing ? (
         <form
           className="mt-4 space-y-5 border-t pt-4"
-          onSubmit={handleSubmit}
+          onSubmit={submitForm(handleSubmit)}
         >
           <div>
-            <h3 className="font-medium">
-              Editar agendamento
-            </h3>
+            <h3 className="font-medium">Editar agendamento</h3>
 
             <p className="mt-1 text-sm text-muted-foreground">
-              Altere o paciente ou as informações
-              administrativas.
+              Altere o paciente ou as informações administrativas.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label
-                htmlFor={`edit-appointment-patient-${appointment.id}`}
-              >
+              <Label htmlFor={`edit-appointment-patient-${appointment.id}`}>
                 Paciente
               </Label>
 
               <select
+                {...register("patientClinicId")}
+                aria-invalid={!!errors.patientClinicId}
+                aria-describedby={
+                  errors.patientClinicId
+                    ? `edit-appointment-patient-${appointment.id}` + "-error"
+                    : undefined
+                }
                 id={`edit-appointment-patient-${appointment.id}`}
                 required
                 disabled={isSaving}
-                value={formValues.patientClinicId}
                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  updateField(
-                    "patientClinicId",
-                    event.target.value,
-                  )
-                }
               >
                 {patients.map((patientLink) => (
-                  <option
-                    key={patientLink.id}
-                    value={patientLink.id}
-                  >
+                  <option key={patientLink.id} value={patientLink.id}>
                     {patientLink.patient.fullName}
                   </option>
                 ))}
               </select>
+              <FormFieldError
+                id={`edit-appointment-patient-${appointment.id}` + "-error"}
+                message={errors.patientClinicId?.message}
+              />
             </div>
 
             <div className="space-y-2">
-              <Label
-                htmlFor={`edit-appointment-type-${appointment.id}`}
-              >
+              <Label htmlFor={`edit-appointment-type-${appointment.id}`}>
                 Tipo de atendimento
               </Label>
 
-              <Input
-                id={`edit-appointment-type-${appointment.id}`}
-                maxLength={60}
-                disabled={isSaving}
-                value={formValues.appointmentTypeCode}
-                onChange={(event) =>
-                  updateField(
-                    "appointmentTypeCode",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="appointmentTypeCode"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.appointmentTypeCode}
+                    aria-describedby={
+                      errors.appointmentTypeCode
+                        ? `edit-appointment-type-${appointment.id}` + "-error"
+                        : undefined
+                    }
+                    id={`edit-appointment-type-${appointment.id}`}
+                    maxLength={60}
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={`edit-appointment-type-${appointment.id}` + "-error"}
+                message={errors.appointmentTypeCode?.message}
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
-              <Label
-                htmlFor={`edit-appointment-note-${appointment.id}`}
-              >
+              <Label htmlFor={`edit-appointment-note-${appointment.id}`}>
                 Observação administrativa
               </Label>
 
               <textarea
+                {...register("administrativeNote")}
+                aria-invalid={!!errors.administrativeNote}
+                aria-describedby={
+                  errors.administrativeNote
+                    ? `edit-appointment-note-${appointment.id}` + "-error"
+                    : undefined
+                }
                 id={`edit-appointment-note-${appointment.id}`}
                 maxLength={500}
                 disabled={isSaving}
-                value={formValues.administrativeNote}
                 className="border-input bg-background min-h-24 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                onChange={(event) =>
-                  updateField(
-                    "administrativeNote",
-                    event.target.value,
-                  )
-                }
+              />
+              <FormFieldError
+                id={`edit-appointment-note-${appointment.id}` + "-error"}
+                message={errors.administrativeNote?.message}
               />
             </div>
           </div>
 
           {errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
 
           <div className="flex flex-wrap gap-3">
-            <Button
-              type="submit"
-              disabled={isSaving}
-            >
-              {isSaving
-                ? "Salvando..."
-                : "Salvar alterações"}
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Salvando..." : "Salvar alterações"}
             </Button>
 
             <Button
@@ -459,19 +392,9 @@ export function AppointmentListItem({
             appointment={appointment}
             canChangeStatus={canChangeStatus}
             currentTimeIso={currentTimeIso}
-            onAppointmentChange={(
-              updatedAppointment,
-            ) => {
-              setAppointment(
-                updatedAppointment,
-              );
-
-              setFormValues(
-                appointmentToForm(
-                  updatedAppointment,
-                ),
-              );
-
+            onAppointmentChange={(updatedAppointment) => {
+              setAppointment(updatedAppointment);
+              reset(appointmentToForm(updatedAppointment));
               setSuccessMessage(null);
             }}
           />
