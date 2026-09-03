@@ -1,6 +1,13 @@
 "use client";
 
 import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import {
   type ChangeEvent,
   type FormEvent,
   useRef,
@@ -30,10 +37,9 @@ const ALLOWED_FILE_NAME_PATTERN =
   /\.(pdf|jpe?g|png)$/i;
 
 async function readResponseMessage(
-  response: Response,
+  response: BrowserResponse,
 ) {
-  const body: unknown = await response
-    .json()
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -193,19 +199,17 @@ export function MedicalRecordAttachmentUploadForm({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientId,
         )}/medical-record/entries/${encodeURIComponent(
           entryId,
         )}/attachments`,
-        {
-          method: "POST",
-          body: formData,
-        },
-      );
+        method: "POST",
+        data: formData,
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -214,7 +218,7 @@ export function MedicalRecordAttachmentUploadForm({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );

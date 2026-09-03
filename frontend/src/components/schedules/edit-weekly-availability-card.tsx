@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -23,9 +30,8 @@ type EditWeeklyAvailabilityCardProps = {
   onCancel: () => void;
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -79,26 +85,24 @@ export function EditWeeklyAvailabilityCard({
     setErrorMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           professionalId,
         )}/weekly-availabilities/${encodeURIComponent(
           availability.id,
         )}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            weekday: Number(formValues.weekday),
-            startTime: formValues.startTime,
-            endTime: formValues.endTime,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          weekday: Number(formValues.weekday),
+          startTime: formValues.startTime,
+          endTime: formValues.endTime,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -107,7 +111,7 @@ export function EditWeeklyAvailabilityCard({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -116,7 +120,7 @@ export function EditWeeklyAvailabilityCard({
       }
 
       const body =
-        (await response.json()) as WeeklyAvailabilityResponse;
+        (await readBrowserJson(response)) as WeeklyAvailabilityResponse;
 
       onUpdated(body.availability);
     } catch {

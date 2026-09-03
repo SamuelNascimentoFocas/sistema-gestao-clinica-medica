@@ -1,5 +1,11 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+} from "@/lib/client/browser-api";
+
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -32,23 +38,24 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await browserApi.request<string>({
+        url: "/api/auth/login",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({
+        data: JSON.stringify({
           email,
           password,
         }),
       });
 
-      const body = (await response.json().catch(() => null)) as
+      const body = (await readBrowserJson(response).catch(() => null)) as
         | LoginErrorResponse
         | null;
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           body?.message ?? "Não foi possível entrar no sistema.",
         );

@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  browserApi,
+} from "@/lib/client/browser-api";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -12,7 +16,8 @@ export function LogoutButton() {
     setIsLoggingOut(true);
 
     try {
-      await fetch("/api/auth/logout", {
+      await browserApi.request<string>({
+        url: "/api/auth/logout",
         method: "DELETE",
       });
     } finally {

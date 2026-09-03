@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -34,9 +41,8 @@ function getLocalToday() {
   return localDate.toISOString().slice(0, 10);
 }
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -107,18 +113,16 @@ export function CreatePatientCard({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(formValues),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify(formValues),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -127,7 +131,7 @@ export function CreatePatientCard({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -136,7 +140,7 @@ export function CreatePatientCard({
       }
 
       const body =
-        (await response.json()) as PatientLinkResponse;
+        (await readBrowserJson(response)) as PatientLinkResponse;
 
       onCreated(body.patientLink);
 

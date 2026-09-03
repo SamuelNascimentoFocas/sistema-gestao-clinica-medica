@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { ChangeEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -40,9 +47,8 @@ type ClinicSchedulesManagerProps = {
   canManageOwn: boolean;
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -190,17 +196,15 @@ export function ClinicSchedulesManager({
     setIsLoading(true);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           professionalId,
         )}/schedule`,
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
+        method: "GET",
+        fetchOptions: { cache: "no-store" },
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -209,7 +213,7 @@ export function ClinicSchedulesManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setSchedule(null);
         setErrorMessage(
           await readResponseMessage(response),
@@ -219,7 +223,7 @@ export function ClinicSchedulesManager({
       }
 
       const body =
-        (await response.json()) as ProfessionalScheduleResponse;
+        (await readBrowserJson(response)) as ProfessionalScheduleResponse;
 
       setSchedule(body.schedule);
     } catch {
@@ -292,24 +296,22 @@ export function ClinicSchedulesManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           schedule.professional.id,
         )}/weekly-availabilities/${encodeURIComponent(
           availability.id,
         )}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            isActive: !availability.isActive,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          isActive: !availability.isActive,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -318,7 +320,7 @@ export function ClinicSchedulesManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -327,7 +329,7 @@ export function ClinicSchedulesManager({
       }
 
       const body =
-        (await response.json()) as WeeklyAvailabilityResponse;
+        (await readBrowserJson(response)) as WeeklyAvailabilityResponse;
 
       const updatedAvailability = body.availability;
 
@@ -424,24 +426,22 @@ export function ClinicSchedulesManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           schedule.professional.id,
         )}/schedule-blocks/${encodeURIComponent(
           scheduleBlock.id,
         )}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            isActive: !scheduleBlock.isActive,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          isActive: !scheduleBlock.isActive,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -450,7 +450,7 @@ export function ClinicSchedulesManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -459,7 +459,7 @@ export function ClinicSchedulesManager({
       }
 
       const body =
-        (await response.json()) as ScheduleBlockResponse;
+        (await readBrowserJson(response)) as ScheduleBlockResponse;
 
       const updatedScheduleBlock =
         body.scheduleBlock;

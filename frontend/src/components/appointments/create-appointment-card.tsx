@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -28,9 +35,8 @@ type CreateAppointmentCardProps = {
   professionals: ClinicProfessionalLink[];
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -161,29 +167,27 @@ export function CreateAppointmentCard({
     }
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/appointments`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            patientClinicId:
-              formValues.patientClinicId,
-            clinicProfessionalId:
-              formValues.clinicProfessionalId,
-            startsAt,
-            durationMinutes,
-            appointmentTypeCode:
-              formValues.appointmentTypeCode,
-            administrativeNote:
-              formValues.administrativeNote,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          patientClinicId:
+            formValues.patientClinicId,
+          clinicProfessionalId:
+            formValues.clinicProfessionalId,
+          startsAt,
+          durationMinutes,
+          appointmentTypeCode:
+            formValues.appointmentTypeCode,
+          administrativeNote:
+            formValues.administrativeNote,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -192,7 +196,7 @@ export function CreateAppointmentCard({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -201,7 +205,7 @@ export function CreateAppointmentCard({
       }
 
       const body =
-        (await response.json()) as AppointmentResponse;
+        (await readBrowserJson(response)) as AppointmentResponse;
 
       if (!body.appointment) {
         setErrorMessage(

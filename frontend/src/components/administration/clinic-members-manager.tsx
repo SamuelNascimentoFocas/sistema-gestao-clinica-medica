@@ -1,6 +1,13 @@
 "use client";
 
 import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import {
   useState,
   type FormEvent,
 } from "react";
@@ -116,11 +123,11 @@ export function ClinicMembersManager({
   const [successMessage, setSuccessMessage] =
     useState<string | null>(null);
 
-  async function readResponse(response: Response) {
-    return response.json().catch(() => null) as Promise<unknown>;
+  async function readResponse(response: BrowserResponse) {
+    return readBrowserJson(response).catch(() => null) as Promise<unknown>;
   }
 
-  function handleUnauthenticated(response: Response) {
+  function handleUnauthenticated(response: BrowserResponse) {
     if (response.status === 401) {
       window.location.assign("/login");
 
@@ -166,18 +173,16 @@ export function ClinicMembersManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/members`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(form),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify(form),
+      });
 
       if (handleUnauthenticated(response)) {
         return;
@@ -185,7 +190,7 @@ export function ClinicMembersManager({
 
       const body = await readResponse(response);
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         throw new Error(
           getResponseMessage(
             body,
@@ -240,22 +245,20 @@ export function ClinicMembersManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/members/${encodeURIComponent(
           member.id,
         )}/role`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            roleCode,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          roleCode,
+        }),
+      });
 
       if (handleUnauthenticated(response)) {
         return;
@@ -263,7 +266,7 @@ export function ClinicMembersManager({
 
       const body = await readResponse(response);
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         throw new Error(
           getResponseMessage(
             body,
@@ -313,22 +316,20 @@ export function ClinicMembersManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/members/${encodeURIComponent(
           member.id,
         )}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            isActive: nextStatus,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          isActive: nextStatus,
+        }),
+      });
 
       if (handleUnauthenticated(response)) {
         return;
@@ -336,7 +337,7 @@ export function ClinicMembersManager({
 
       const body = await readResponse(response);
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         throw new Error(
           getResponseMessage(
             body,

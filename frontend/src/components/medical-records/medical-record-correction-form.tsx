@@ -1,6 +1,13 @@
 "use client";
 
 import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import {
   FormEvent,
   useState,
 } from "react";
@@ -17,10 +24,9 @@ type MedicalRecordCorrectionFormProps = {
 };
 
 async function readResponseMessage(
-  response: Response,
+  response: BrowserResponse,
 ) {
-  const body: unknown = await response
-    .json()
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -79,24 +85,22 @@ export function MedicalRecordCorrectionForm({
     setErrorMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientId,
         )}/medical-record/entries/${encodeURIComponent(
           entryId,
         )}/corrections`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: normalizedContent,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          content: normalizedContent,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -105,7 +109,7 @@ export function MedicalRecordCorrectionForm({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );

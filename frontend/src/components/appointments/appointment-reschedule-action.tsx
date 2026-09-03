@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -90,10 +97,9 @@ function createFormValues({
 }
 
 async function readResponseMessage(
-  response: Response,
+  response: BrowserResponse,
 ) {
-  const body: unknown = await response
-    .json()
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -223,28 +229,26 @@ export function AppointmentRescheduleAction({
     }
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/appointments/${encodeURIComponent(
           appointment.id,
         )}/reschedule`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            expectedVersion: appointment.version,
-            clinicProfessionalId:
-              formValues.clinicProfessionalId,
-            startsAt,
-            durationMinutes,
-            cancellationNote:
-              formValues.cancellationNote,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          expectedVersion: appointment.version,
+          clinicProfessionalId:
+            formValues.clinicProfessionalId,
+          startsAt,
+          durationMinutes,
+          cancellationNote:
+            formValues.cancellationNote,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -253,7 +257,7 @@ export function AppointmentRescheduleAction({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -262,7 +266,7 @@ export function AppointmentRescheduleAction({
       }
 
       const body =
-        (await response.json()) as AppointmentResponse;
+        (await readBrowserJson(response)) as AppointmentResponse;
 
       if (!body.appointment) {
         setErrorMessage(

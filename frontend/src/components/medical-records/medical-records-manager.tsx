@@ -1,6 +1,13 @@
 "use client";
 
 import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import {
   FormEvent,
   useMemo,
   useState,
@@ -65,10 +72,9 @@ function formatDateTime(
 }
 
 async function readResponseMessage(
-  response: Response,
+  response: BrowserResponse,
 ) {
-  const body: unknown = await response
-    .json()
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -153,26 +159,24 @@ export function MedicalRecordsManager({
     }
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientId,
         )}/medical-record/access`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            purposeCode,
-            purposeNote:
-              normalizedPurposeNote || null,
-            page,
-            perPage: 20,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          purposeCode,
+          purposeNote:
+            normalizedPurposeNote || null,
+          page,
+          perPage: 20,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -181,7 +185,7 @@ export function MedicalRecordsManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -190,7 +194,7 @@ export function MedicalRecordsManager({
       }
 
       const body =
-        (await response.json()) as MedicalRecordTimelineResponse;
+        (await readBrowserJson(response)) as MedicalRecordTimelineResponse;
 
       setTimeline(body);
     } catch {

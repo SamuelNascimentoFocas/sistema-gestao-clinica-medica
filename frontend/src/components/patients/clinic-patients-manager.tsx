@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -85,9 +92,8 @@ function getAddress(patientLink: PatientClinicLink) {
     .join(" · ");
 }
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -164,15 +170,13 @@ export function ClinicPatientsManager({
     }
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients?${query.toString()}`,
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
+        method: "GET",
+        fetchOptions: { cache: "no-store" },
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -181,7 +185,7 @@ export function ClinicPatientsManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -190,7 +194,7 @@ export function ClinicPatientsManager({
       }
 
       const body =
-        (await response.json()) as PatientLinksResponse;
+        (await readBrowserJson(response)) as PatientLinksResponse;
 
       setPatients(body);
     } catch {
@@ -252,22 +256,20 @@ export function ClinicPatientsManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientLink.patient.id,
         )}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            isActive: nextIsActive,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          isActive: nextIsActive,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -276,7 +278,7 @@ export function ClinicPatientsManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -285,7 +287,7 @@ export function ClinicPatientsManager({
       }
 
       const body =
-        (await response.json()) as PatientLinkResponse;
+        (await readBrowserJson(response)) as PatientLinkResponse;
 
       const updatedPatientLink = body.patientLink;
 

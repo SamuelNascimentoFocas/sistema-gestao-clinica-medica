@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -28,9 +35,8 @@ type CreateProfessionalCardProps = {
   ) => void;
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -106,31 +112,29 @@ export function CreateProfessionalCard({
     );
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            fullName: formValues.fullName,
-            crmNumber: formValues.crmNumber,
-            crmState: formValues.crmState,
-            specialty: formValues.specialty,
-            phone: formValues.phone,
-            email: formValues.email,
-            userId: formValues.userId || null,
-            localCode: formValues.localCode,
-            defaultAppointmentDurationMinutes:
-              duration,
-            acceptsAppointments:
-              formValues.acceptsAppointments,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          fullName: formValues.fullName,
+          crmNumber: formValues.crmNumber,
+          crmState: formValues.crmState,
+          specialty: formValues.specialty,
+          phone: formValues.phone,
+          email: formValues.email,
+          userId: formValues.userId || null,
+          localCode: formValues.localCode,
+          defaultAppointmentDurationMinutes:
+            duration,
+          acceptsAppointments:
+            formValues.acceptsAppointments,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -139,7 +143,7 @@ export function CreateProfessionalCard({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -148,7 +152,7 @@ export function CreateProfessionalCard({
       }
 
       const body =
-        (await response.json()) as ProfessionalLinkResponse;
+        (await readBrowserJson(response)) as ProfessionalLinkResponse;
 
       onCreated(body.professionalLink);
 

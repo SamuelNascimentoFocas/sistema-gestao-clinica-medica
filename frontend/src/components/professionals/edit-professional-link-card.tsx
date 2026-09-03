@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -28,9 +35,8 @@ type EditProfessionalLinkCardProps = {
   onCancel: () => void;
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -87,26 +93,24 @@ export function EditProfessionalLinkCard({
     );
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           professionalLink.professional.id,
         )}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            localCode: formValues.localCode,
-            defaultAppointmentDurationMinutes:
-              duration,
-            acceptsAppointments:
-              formValues.acceptsAppointments,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          localCode: formValues.localCode,
+          defaultAppointmentDurationMinutes:
+            duration,
+          acceptsAppointments:
+            formValues.acceptsAppointments,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -115,7 +119,7 @@ export function EditProfessionalLinkCard({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -124,7 +128,7 @@ export function EditProfessionalLinkCard({
       }
 
       const body =
-        (await response.json()) as ProfessionalLinkResponse;
+        (await readBrowserJson(response)) as ProfessionalLinkResponse;
 
       onUpdated(body.professionalLink);
     } catch {
