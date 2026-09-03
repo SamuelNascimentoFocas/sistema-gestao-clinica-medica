@@ -836,6 +836,20 @@ fixtures não foram alterados. A execução utilizou exclusivamente
 independente verificado antes de cada execução e aplicação/rollback das 25
 migrations. Formatação, typecheck, lint e build também passaram.
 
+Na Fase 6, fixtures recorrentes passaram a usar 13 Lucid Factories compatíveis
+com a versão 21.8.2 instalada. Foram mantidas as criações manuais que exercitam
+constraints, relações dos models, hooks, triggers ou cenários especiais. O
+inventário passou de 148 para 70 chamadas diretas a models e de 79 para 31
+helpers `create*`. Nenhum código de produção ou configuração foi alterado.
+O inventário completo, defaults, states, relações e justificativas dos usos
+manuais estão em [FACTORIES.md](FACTORIES.md).
+
+A validação passou com **94 testes funcionais** (os 91 existentes e três testes
+das factories), os dois testes de contratos (59 rotas e 46 validações), format,
+typecheck, lint e build. Foi utilizado somente `clinic_phase6_suite_20260902`,
+no PostgreSQL 18.4 temporário em `127.0.0.1:55432`, com PGDATA independente
+verificado, aplicação e rollback das 25 migrations.
+
 ## 19. Builds
 
 ### Backend
