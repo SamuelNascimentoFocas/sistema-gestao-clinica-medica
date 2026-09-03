@@ -2,17 +2,13 @@ import type { HttpContext } from '@adonisjs/core/http'
 import {
   createProfessionalValidator,
   listProfessionalsValidator,
-  updateProfessionalLinkStatusValidator,
   updateProfessionalLinkValidator,
 } from '#validators/professional'
-
 import {
   loadProfessionalLink,
   listProfessionals,
-  findProfessionalLinkForStatus,
   findProfessionalLink,
   updateProfessional,
-  setProfessionalLinkStatus,
 } from '#services/professional_service'
 import { registerProfessional } from '#services/professional_registration_service'
 import { respondToDomainError } from '#controllers/helpers/domain_error_response'
@@ -107,41 +103,6 @@ export default class ProfessionalsController {
 
     try {
       const loadedProfessionalLink = await updateProfessional(clinicId, professionalLink, payload)
-
-      return response.ok({
-        professionalLink: loadedProfessionalLink!.serialize(),
-      })
-    } catch (error) {
-      return respondToDomainError(error, response)
-    }
-  }
-
-  async updateStatus({ clinicAuthorization, params, request, response }: HttpContext) {
-    if (!clinicAuthorization) {
-      return response.internalServerError({
-        message: 'Contexto de autorização não inicializado',
-      })
-    }
-
-    const professionalLink = await findProfessionalLinkForStatus(
-      clinicAuthorization.clinic.id,
-      params.professionalId
-    )
-
-    if (!professionalLink) {
-      return response.notFound({
-        message: 'Profissional não encontrado neste consultório',
-      })
-    }
-
-    const { isActive } = await request.validateUsing(updateProfessionalLinkStatusValidator)
-
-    try {
-      const loadedProfessionalLink = await setProfessionalLinkStatus(
-        clinicAuthorization.clinic.id,
-        professionalLink,
-        isActive
-      )
 
       return response.ok({
         professionalLink: loadedProfessionalLink!.serialize(),

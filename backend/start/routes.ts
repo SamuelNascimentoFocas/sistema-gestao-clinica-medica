@@ -18,6 +18,30 @@ const AuditLogsController = () => import('#controllers/audit_logs_controller')
 const UserClinicsController = () => import('#controllers/user_clinics_controller')
 const ClinicMembersController = () => import('#controllers/clinic_members_controller')
 
+const AppointmentStatusController = () => import('#controllers/appointment_status_controller')
+const AppointmentReschedulingController = () =>
+  import('#controllers/appointment_rescheduling_controller')
+const ClinicMemberAccessController = () => import('#controllers/clinic_member_access_controller')
+const ClinicMembershipStatusController = () =>
+  import('#controllers/clinic_membership_status_controller')
+const ClinicStatusController = () => import('#controllers/clinic_status_controller')
+const MedicalRecordAttachmentDownloadsController = () =>
+  import('#controllers/medical_record_attachment_downloads_controller')
+const MedicalRecordEntriesController = () =>
+  import('#controllers/medical_record_entries_controller')
+const MedicalRecordCorrectionsController = () =>
+  import('#controllers/medical_record_corrections_controller')
+const PatientLinkStatusController = () => import('#controllers/patient_link_status_controller')
+const ProfessionalWeeklyAvailabilitiesController = () =>
+  import('#controllers/professional_weekly_availabilities_controller')
+const ProfessionalScheduleStatusController = () =>
+  import('#controllers/professional_schedule_status_controller')
+const ProfessionalScheduleBlocksController = () =>
+  import('#controllers/professional_schedule_blocks_controller')
+const ProfessionalLinkStatusController = () =>
+  import('#controllers/professional_link_status_controller')
+const UserStatusController = () => import('#controllers/user_status_controller')
+
 router.get('/', async () => {
   return {
     name: 'Clinic Management API',
@@ -54,7 +78,7 @@ router
     router.patch('/:id', [ClinicsController, 'update']).where('id', router.matchers.uuid())
 
     router
-      .patch('/:id/status', [ClinicsController, 'updateStatus'])
+      .patch('/:id/status', [ClinicStatusController, 'updateStatus'])
       .where('id', router.matchers.uuid())
   })
   .prefix('/api/v1/clinics')
@@ -75,7 +99,7 @@ router
     router.patch('/:id', [UsersController, 'update']).where('id', router.matchers.uuid())
 
     router
-      .patch('/:id/status', [UsersController, 'updateStatus'])
+      .patch('/:id/status', [UserStatusController, 'updateStatus'])
       .where('id', router.matchers.uuid())
   })
   .prefix('/api/v1/users')
@@ -98,7 +122,7 @@ router
       .where('id', router.matchers.uuid())
 
     router
-      .patch('/:id/status', [ClinicMembershipsController, 'updateStatus'])
+      .patch('/:id/status', [ClinicMembershipStatusController, 'updateStatus'])
       .where('id', router.matchers.uuid())
   })
   .prefix('/api/v1/clinic-memberships')
@@ -124,7 +148,7 @@ router
   )
 
 router
-  .get('/api/v1/clinics/:clinicId/members', [ClinicContextsController, 'members'])
+  .get('/api/v1/clinics/:clinicId/members', [ClinicMembersController, 'index'])
   .where('clinicId', router.matchers.uuid())
   .use(
     middleware.auth({
@@ -153,7 +177,7 @@ router
 
 router
   .patch('/api/v1/clinics/:clinicId/members/:membershipId/role', [
-    ClinicMembersController,
+    ClinicMemberAccessController,
     'updateRole',
   ])
   .where('clinicId', router.matchers.uuid())
@@ -171,7 +195,7 @@ router
 
 router
   .patch('/api/v1/clinics/:clinicId/members/:membershipId/status', [
-    ClinicMembersController,
+    ClinicMemberAccessController,
     'updateStatus',
   ])
   .where('clinicId', router.matchers.uuid())
@@ -213,7 +237,7 @@ router
       })
     )
 
-    router.patch('/:patientId/status', [PatientsController, 'updateStatus']).use(
+    router.patch('/:patientId/status', [PatientLinkStatusController, 'updateStatus']).use(
       middleware.clinicPermission({
         permissions: ['patients.update'],
       })
@@ -230,29 +254,31 @@ router
 
 router
   .group(() => {
-    router.get('/', [MedicalRecordsController, 'index']).use(
+    router.get('/', [MedicalRecordsController, 'show']).use(
       middleware.clinicPermission({
         permissions: ['patients.read', 'medical_records.read'],
       })
     )
 
-    router.post('/entries', [MedicalRecordsController, 'storeEntry']).use(
+    router.post('/entries', [MedicalRecordEntriesController, 'store']).use(
       middleware.clinicPermission({
         permissions: ['patients.read', 'medical_records.create'],
       })
     )
 
-    router.get('/entries/:entryId', [MedicalRecordsController, 'showEntry']).use(
+    router.get('/entries/:entryId', [MedicalRecordEntriesController, 'show']).use(
       middleware.clinicPermission({
         permissions: ['patients.read', 'medical_records.read'],
       })
     )
 
-    router.post('/entries/:entryId/corrections', [MedicalRecordsController, 'correctEntry']).use(
-      middleware.clinicPermission({
-        permissions: ['patients.read', 'medical_records.correct'],
-      })
-    )
+    router
+      .post('/entries/:entryId/corrections', [MedicalRecordCorrectionsController, 'correct'])
+      .use(
+        middleware.clinicPermission({
+          permissions: ['patients.read', 'medical_records.correct'],
+        })
+      )
 
     router.get('/entries/:entryId/attachments', [MedicalRecordAttachmentsController, 'index']).use(
       middleware.clinicPermission({
@@ -262,7 +288,7 @@ router
 
     router
       .get('/entries/:entryId/attachments/:attachmentId/download', [
-        MedicalRecordAttachmentsController,
+        MedicalRecordAttachmentDownloadsController,
         'download',
       ])
       .use(
@@ -314,7 +340,7 @@ router
       })
     )
 
-    router.patch('/:professionalId/status', [ProfessionalsController, 'updateStatus']).use(
+    router.patch('/:professionalId/status', [ProfessionalLinkStatusController, 'updateStatus']).use(
       middleware.clinicPermission({
         permissions: ['professionals.update'],
       })
@@ -338,7 +364,7 @@ router
     )
 
     router
-      .post('/weekly-availabilities', [ProfessionalSchedulesController, 'storeWeeklyAvailability'])
+      .post('/weekly-availabilities', [ProfessionalWeeklyAvailabilitiesController, 'store'])
       .use(
         middleware.clinicPermission({
           permissions: ['schedules.read'],
@@ -348,8 +374,8 @@ router
 
     router
       .patch('/weekly-availabilities/:availabilityId', [
-        ProfessionalSchedulesController,
-        'updateWeeklyAvailability',
+        ProfessionalWeeklyAvailabilitiesController,
+        'update',
       ])
       .use(
         middleware.clinicPermission({
@@ -360,7 +386,7 @@ router
 
     router
       .patch('/weekly-availabilities/:availabilityId/status', [
-        ProfessionalSchedulesController,
+        ProfessionalScheduleStatusController,
         'updateWeeklyAvailabilityStatus',
       ])
       .use(
@@ -371,7 +397,7 @@ router
       .use(middleware.scheduleManagement())
 
     router
-      .post('/schedule-blocks', [ProfessionalSchedulesController, 'storeScheduleBlock'])
+      .post('/schedule-blocks', [ProfessionalScheduleBlocksController, 'store'])
       .use(
         middleware.clinicPermission({
           permissions: ['schedules.read'],
@@ -380,7 +406,7 @@ router
       .use(middleware.scheduleManagement())
 
     router
-      .patch('/schedule-blocks/:blockId', [ProfessionalSchedulesController, 'updateScheduleBlock'])
+      .patch('/schedule-blocks/:blockId', [ProfessionalScheduleBlocksController, 'update'])
       .use(
         middleware.clinicPermission({
           permissions: ['schedules.read'],
@@ -390,7 +416,7 @@ router
 
     router
       .patch('/schedule-blocks/:blockId/status', [
-        ProfessionalSchedulesController,
+        ProfessionalScheduleStatusController,
         'updateScheduleBlockStatus',
       ])
       .use(
@@ -451,7 +477,7 @@ router
         })
       )
     router
-      .post('/:appointmentId/confirm', [AppointmentsController, 'confirm'])
+      .post('/:appointmentId/confirm', [AppointmentStatusController, 'confirm'])
       .use(
         middleware.clinicPermission({
           permissions: ['appointments.read'],
@@ -464,7 +490,7 @@ router
       )
 
     router
-      .post('/:appointmentId/cancel', [AppointmentsController, 'cancel'])
+      .post('/:appointmentId/cancel', [AppointmentStatusController, 'cancel'])
       .use(
         middleware.clinicPermission({
           permissions: ['appointments.read'],
@@ -477,7 +503,7 @@ router
       )
 
     router
-      .post('/:appointmentId/complete', [AppointmentsController, 'complete'])
+      .post('/:appointmentId/complete', [AppointmentStatusController, 'complete'])
       .use(
         middleware.clinicPermission({
           permissions: ['appointments.read'],
@@ -490,7 +516,7 @@ router
       )
 
     router
-      .post('/:appointmentId/no-show', [AppointmentsController, 'markNoShow'])
+      .post('/:appointmentId/no-show', [AppointmentStatusController, 'markNoShow'])
       .use(
         middleware.clinicPermission({
           permissions: ['appointments.read'],
@@ -503,7 +529,7 @@ router
       )
 
     router
-      .post('/:appointmentId/reschedule', [AppointmentsController, 'reschedule'])
+      .post('/:appointmentId/reschedule', [AppointmentReschedulingController, 'reschedule'])
       .use(
         middleware.clinicPermission({
           permissions: ['appointments.read'],
