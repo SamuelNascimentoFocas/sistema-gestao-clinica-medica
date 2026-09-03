@@ -1,76 +1,12 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createBearerToken as createToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
-import Role from '#models/role'
 import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
-import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-type RoleCode = 'clinic_admin' | 'receptionist' | 'doctor'
-
-async function createUser({
-  email,
-  isActive = true,
-  isGlobalAdmin = false,
-}: {
-  email: string
-  isActive?: boolean
-  isGlobalAdmin?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário de Profissionais',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-  isActive = true,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: RoleCode
-  isActive?: boolean
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive,
-  })
-}
-
-async function createToken(user: User) {
-  const token = await User.accessTokens.create(user)
-  return token.value!.release()
-}
 
 test.group('Professionals API', (group) => {
   group.each.setup(async () => {
@@ -83,7 +19,10 @@ test.group('Professionals API', (group) => {
   })
 
   test('requires authentication and professional permissions', async ({ client }) => {
-    const clinic = await createClinic('Clínica Protegida')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Protegida',
+    }).create()
 
     const unauthenticatedResponse = await client
       .get(`/api/v1/clinics/${clinic.id}/professionals`)
@@ -91,9 +30,10 @@ test.group('Professionals API', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const receptionist = await createUser({
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'professional.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -125,11 +65,15 @@ test.group('Professionals API', (group) => {
   })
 
   test('creates, lists, shows and updates a clinic professional', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Profissionais')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Profissionais',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'professional.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -225,12 +169,19 @@ test.group('Professionals API', (group) => {
   })
 
   test('links one global professional to multiple clinics', async ({ client, assert }) => {
-    const firstClinic = await createClinic('Primeira Clínica')
-    const secondClinic = await createClinic('Segunda Clínica')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'shared.professional.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -311,12 +262,19 @@ test.group('Professionals API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Clínica de Validação 1')
-    const secondClinic = await createClinic('Clínica de Validação 2')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação 1',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação 2',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'validation.professional.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -330,9 +288,10 @@ test.group('Professionals API', (group) => {
       roleCode: 'clinic_admin',
     })
 
-    const doctorUser = await createUser({
+    const doctorUser = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'linked.doctor@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: doctorUser,
@@ -340,9 +299,10 @@ test.group('Professionals API', (group) => {
       roleCode: 'doctor',
     })
 
-    const receptionistUser = await createUser({
+    const receptionistUser = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'linked.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: receptionistUser,

@@ -1,43 +1,9 @@
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
+import { createBearerToken } from '#tests/helpers/auth'
 import { test } from '@japa/runner'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
-import User from '#models/user'
-import Clinic from '#models/clinic'
 import Role from '#models/role'
-
-async function createUser({
-  email,
-  isGlobalAdmin,
-  isActive = true,
-}: {
-  email: string
-  isGlobalAdmin: boolean
-  isActive?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário Teste',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createClinic({ name, isActive = true }: { name: string; isActive?: boolean }) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive,
-  })
-}
 
 async function createRole({
   code,
@@ -57,12 +23,6 @@ async function createRole({
   })
 }
 
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
-
 test.group('Clinic memberships', (group) => {
   group.each.setup(async () => {
     await truncateClinicSchemaTables()
@@ -79,10 +39,11 @@ test.group('Clinic memberships', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const regularUser = await createUser({
+    const regularUser = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'regular.membership@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
     const token = await createBearerToken(regularUser)
 
@@ -98,19 +59,17 @@ test.group('Clinic memberships', (group) => {
   })
 
   test('allows a global administrator to manage memberships', async ({ client, assert }) => {
-    const admin = await createUser({
-      email: 'membership.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'membership.admin@example.com' })
+      .create()
 
-    const user = await createUser({
+    const user = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'membership.user@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
-    const clinic = await createClinic({
-      name: 'Clínica do Vínculo',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica do Vínculo' }).create()
 
     await createRole({
       code: 'receptionist',
@@ -185,19 +144,17 @@ test.group('Clinic memberships', (group) => {
   })
 
   test('rejects duplicate and invalid memberships', async ({ client }) => {
-    const admin = await createUser({
-      email: 'membership.validation.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'membership.validation.admin@example.com' })
+      .create()
 
-    const user = await createUser({
+    const user = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'membership.validation.user@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
-    const clinic = await createClinic({
-      name: 'Clínica de Validação',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Validação' }).create()
 
     await createRole({
       code: 'receptionist',

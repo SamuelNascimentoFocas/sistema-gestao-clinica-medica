@@ -1,7 +1,8 @@
+import { UserClinicRoleFactory } from '#database/factories/user_clinic_role_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
 import { test } from '@japa/runner'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
-import User from '#models/user'
-import Clinic from '#models/clinic'
 import Permission from '#models/permission'
 import Role from '#models/role'
 import UserClinicRole from '#models/user_clinic_role'
@@ -95,37 +96,22 @@ test.group('Authorization catalog', (group) => {
   test('relates a user, clinic, and role correctly', async ({ assert }) => {
     await seedAuthorizationCatalog()
 
-    const user = await User.create({
+    const user = await UserFactory.merge({
       fullName: 'Recepcionista Teste',
       email: 'recepcionista@example.com',
       emailNormalized: 'recepcionista@example.com',
-      passwordHash: 'TestPassword!123',
-      isGlobalAdmin: false,
-      isActive: true,
-    })
+    }).create()
 
-    const clinic = await Clinic.create({
-      name: 'Clínica Modelo',
-      cnpj: null,
-      phone: null,
-      addressStreet: null,
-      addressNumber: null,
-      addressComplement: null,
-      addressNeighborhood: null,
-      addressCity: null,
-      addressState: null,
-      addressPostalCode: null,
-      isActive: true,
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica Modelo' }).create()
 
     const role = await Role.findByOrFail('code', 'receptionist')
 
-    const assignment = await UserClinicRole.create({
+    const assignment = await UserClinicRoleFactory.merge({
       userId: user.id,
       clinicId: clinic.id,
       roleId: role.id,
       isActive: true,
-    })
+    }).create()
 
     const loadedAssignment = await UserClinicRole.query()
       .where('id', assignment.id)

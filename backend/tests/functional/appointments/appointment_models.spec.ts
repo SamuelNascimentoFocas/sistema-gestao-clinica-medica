@@ -1,65 +1,22 @@
+import { ClinicProfessionalFactory } from '#database/factories/clinic_professional_factory'
+import { ProfessionalFactory } from '#database/factories/professional_factory'
+import { PatientClinicFactory } from '#database/factories/patient_clinic_factory'
+import { PatientFactory } from '#database/factories/patient_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
-import User from '#models/user'
 import Clinic from '#models/clinic'
-import Patient from '#models/patient'
-import PatientClinic from '#models/patient_clinic'
-import Professional from '#models/professional'
-import ClinicProfessional from '#models/clinic_professional'
 import Appointment from '#models/appointment'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 
-async function createUser(email: string) {
-  return User.create({
-    fullName: 'Usuário de Agendamento',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin: false,
-    isActive: true,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
-
 async function createPatientLink({ clinic, fullName }: { clinic: Clinic; fullName: string }) {
-  const patient = await Patient.create({
-    fullName,
-    birthDate: DateTime.fromISO('1990-05-10'),
-    cpf: null,
-    phone: null,
-    email: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive: true,
-  })
+  const patient = await PatientFactory.merge({ fullName }).create()
 
-  const link = await PatientClinic.create({
+  const link = await PatientClinicFactory.merge({
     patientId: patient.id,
     clinicId: clinic.id,
-    localRecordNumber: null,
-    isActive: true,
-  })
+  }).create()
 
   return {
     patient,
@@ -76,25 +33,12 @@ async function createProfessionalLink({
   fullName: string
   crmNumber: string
 }) {
-  const professional = await Professional.create({
-    userId: null,
-    fullName,
-    crmNumber,
-    crmState: 'MG',
-    specialty: 'Clínica Médica',
-    phone: null,
-    email: null,
-    isActive: true,
-  })
+  const professional = await ProfessionalFactory.merge({ fullName, crmNumber }).create()
 
-  const link = await ClinicProfessional.create({
+  const link = await ClinicProfessionalFactory.merge({
     clinicId: clinic.id,
     professionalId: professional.id,
-    localCode: null,
-    defaultAppointmentDurationMinutes: 30,
-    acceptsAppointments: true,
-    isActive: true,
-  })
+  }).create()
 
   return {
     professional,
@@ -114,9 +58,15 @@ test.group('Appointment models', (group) => {
   test('relates appointments to clinic, patient, professional, users and rescheduling', async ({
     assert,
   }) => {
-    const user = await createUser('appointment.relations@example.com')
+    const user = await UserFactory.merge({
+      fullName: 'Usuário de Agendamento',
+      email: 'appointment.relations@example.com',
+    }).create()
 
-    const clinic = await createClinic('Clínica de Relacionamentos')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Relacionamentos',
+    }).create()
 
     const { patient, link: patientLink } = await createPatientLink({
       clinic,
@@ -300,11 +250,20 @@ test.group('Appointment models', (group) => {
   })
 
   test('enforces clinic scope and one direct rescheduling successor', async ({ assert }) => {
-    const user = await createUser('appointment.scope@example.com')
+    const user = await UserFactory.merge({
+      fullName: 'Usuário de Agendamento',
+      email: 'appointment.scope@example.com',
+    }).create()
 
-    const firstClinic = await createClinic('Primeira Clínica de Escopo')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica de Escopo',
+    }).create()
 
-    const secondClinic = await createClinic('Segunda Clínica de Escopo')
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica de Escopo',
+    }).create()
 
     const { link: firstPatientLink } = await createPatientLink({
       clinic: firstClinic,
@@ -482,9 +441,15 @@ test.group('Appointment models', (group) => {
   })
 
   test('enforces duration, version and status metadata consistency', async ({ assert }) => {
-    const user = await createUser('appointment.constraints@example.com')
+    const user = await UserFactory.merge({
+      fullName: 'Usuário de Agendamento',
+      email: 'appointment.constraints@example.com',
+    }).create()
 
-    const clinic = await createClinic('Clínica de Constraints')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Constraints',
+    }).create()
 
     const { link: patientLink } = await createPatientLink({
       clinic,
@@ -609,9 +574,15 @@ test.group('Appointment models', (group) => {
   test('prevents overlapping active appointments and allows valid exceptions', async ({
     assert,
   }) => {
-    const user = await createUser('appointment.overlap@example.com')
+    const user = await UserFactory.merge({
+      fullName: 'Usuário de Agendamento',
+      email: 'appointment.overlap@example.com',
+    }).create()
 
-    const clinic = await createClinic('Clínica de Sobreposição')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Sobreposição',
+    }).create()
 
     const { link: patientLink } = await createPatientLink({
       clinic,

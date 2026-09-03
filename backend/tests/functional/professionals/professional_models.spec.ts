@@ -1,40 +1,12 @@
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
 import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
 import ProfessionalWeeklyAvailability from '#models/professional_weekly_availability'
 import ProfessionalScheduleBlock from '#models/professional_schedule_block'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
-
-async function createUser(email: string) {
-  return User.create({
-    fullName: 'Usuário Profissional',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin: false,
-    isActive: true,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
 
 async function createProfessional({
   fullName,
@@ -69,8 +41,14 @@ test.group('Professional models', (group) => {
   })
 
   test('relates a professional to user, clinic and schedules', async ({ assert }) => {
-    const user = await createUser('doctor.model@example.com')
-    const clinic = await createClinic('Clínica Profissional')
+    const user = await UserFactory.merge({
+      fullName: 'Usuário Profissional',
+      email: 'doctor.model@example.com',
+    }).create()
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Profissional',
+    }).create()
 
     const professional = await createProfessional({
       fullName: 'Dra. Helena Martins',
@@ -136,7 +114,10 @@ test.group('Professional models', (group) => {
   })
 
   test('enforces unique CRM and optional unique user link', async ({ assert }) => {
-    const firstUser = await createUser('first.professional@example.com')
+    const firstUser = await UserFactory.merge({
+      fullName: 'Usuário Profissional',
+      email: 'first.professional@example.com',
+    }).create()
 
     await createProfessional({
       fullName: 'Primeiro Médico',
@@ -183,8 +164,14 @@ test.group('Professional models', (group) => {
   })
 
   test('enforces clinic and schedule constraints', async ({ assert }) => {
-    const firstClinic = await createClinic('Primeira Clínica')
-    const secondClinic = await createClinic('Segunda Clínica')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica',
+    }).create()
 
     const firstProfessional = await createProfessional({
       fullName: 'Primeiro Profissional',

@@ -1,68 +1,10 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createBearerToken as createToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
-import Role from '#models/role'
-import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-async function createUser({
-  email,
-  isGlobalAdmin = false,
-}: {
-  email: string
-  isGlobalAdmin?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário Administrativo',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive: true,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: 'clinic_admin' | 'receptionist' | 'doctor'
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive: true,
-  })
-}
-
-async function createToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
 
 test.group('Clinic-scoped member administration', (group) => {
   group.each.setup(async () => {
@@ -78,10 +20,11 @@ test.group('Clinic-scoped member administration', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica Administrada')
-    const administrator = await createUser({
+    const clinic = await ClinicFactory.merge({ name: 'Clínica Administrada' }).create()
+    const administrator = await UserFactory.merge({
+      fullName: 'Usuário Administrativo',
       email: 'clinic.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: administrator,
@@ -125,20 +68,23 @@ test.group('Clinic-scoped member administration', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Primeira Clínica')
-    const secondClinic = await createClinic('Segunda Clínica')
+    const firstClinic = await ClinicFactory.merge({ name: 'Primeira Clínica' }).create()
+    const secondClinic = await ClinicFactory.merge({ name: 'Segunda Clínica' }).create()
 
-    const administrator = await createUser({
+    const administrator = await UserFactory.merge({
+      fullName: 'Usuário Administrativo',
       email: 'scoped.admin@example.com',
-    })
+    }).create()
 
-    const targetUser = await createUser({
+    const targetUser = await UserFactory.merge({
+      fullName: 'Usuário Administrativo',
       email: 'target.user@example.com',
-    })
+    }).create()
 
-    const otherUser = await createUser({
+    const otherUser = await UserFactory.merge({
+      fullName: 'Usuário Administrativo',
       email: 'other.user@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: administrator,
@@ -194,10 +140,11 @@ test.group('Clinic-scoped member administration', (group) => {
   })
 
   test('denies member administration to a receptionist', async ({ client }) => {
-    const clinic = await createClinic('Clínica Restrita')
-    const receptionist = await createUser({
+    const clinic = await ClinicFactory.merge({ name: 'Clínica Restrita' }).create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário Administrativo',
       email: 'restricted.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -224,16 +171,16 @@ test.group('Clinic-scoped member administration', (group) => {
   test('protects the last active clinic administrator in local and global routes', async ({
     client,
   }) => {
-    const clinic = await createClinic('Clínica com Administrador Único')
+    const clinic = await ClinicFactory.merge({ name: 'Clínica com Administrador Único' }).create()
 
-    const globalAdmin = await createUser({
-      email: 'global.members.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const globalAdmin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Administrativo', email: 'global.members.admin@example.com' })
+      .create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário Administrativo',
       email: 'only.clinic.admin@example.com',
-    })
+    }).create()
 
     const membership = await createMembership({
       user: clinicAdmin,

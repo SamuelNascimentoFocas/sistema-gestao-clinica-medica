@@ -1,3 +1,4 @@
+import { UserFactory } from '#database/factories/user_factory'
 import { test } from '@japa/runner'
 import testUtils from '@adonisjs/core/services/test_utils'
 import User from '#models/user'
@@ -8,14 +9,14 @@ test.group('Authentication sessions', (group) => {
   test('logs in, returns the authenticated user, and logs out', async ({ client, assert }) => {
     const plainPassword = 'TestPassword!123'
 
-    const user = await User.create({
-      fullName: 'Samuel Teste',
-      email: 'Samuel.Teste@example.com',
-      emailNormalized: 'samuel.teste@example.com',
-      passwordHash: plainPassword,
-      isGlobalAdmin: true,
-      isActive: true,
-    })
+    const user = await UserFactory.apply('globalAdmin')
+      .merge({
+        fullName: 'Samuel Teste',
+        email: 'Samuel.Teste@example.com',
+        emailNormalized: 'samuel.teste@example.com',
+        passwordHash: plainPassword,
+      })
+      .create()
 
     const loginResponse = await client
       .post('/api/v1/auth/login')
@@ -64,14 +65,12 @@ test.group('Authentication sessions', (group) => {
   })
 
   test('rejects invalid credentials', async ({ client }) => {
-    await User.create({
+    await UserFactory.merge({
       fullName: 'Usuário Ativo',
       email: 'ativo@example.com',
       emailNormalized: 'ativo@example.com',
       passwordHash: 'CorrectPassword!123',
-      isGlobalAdmin: false,
-      isActive: true,
-    })
+    }).create()
 
     const response = await client
       .post('/api/v1/auth/login')
@@ -85,14 +84,14 @@ test.group('Authentication sessions', (group) => {
   })
 
   test('does not issue a token to an inactive user', async ({ client, assert }) => {
-    const user = await User.create({
-      fullName: 'Usuário Inativo',
-      email: 'inativo@example.com',
-      emailNormalized: 'inativo@example.com',
-      passwordHash: 'CorrectPassword!123',
-      isGlobalAdmin: false,
-      isActive: false,
-    })
+    const user = await UserFactory.apply('inactive')
+      .merge({
+        fullName: 'Usuário Inativo',
+        email: 'inativo@example.com',
+        emailNormalized: 'inativo@example.com',
+        passwordHash: 'CorrectPassword!123',
+      })
+      .create()
 
     const response = await client
       .post('/api/v1/auth/login')

@@ -1,3 +1,15 @@
+import { AppointmentFactory } from '#database/factories/appointment_factory'
+import { MedicalRecordEntryFactory } from '#database/factories/medical_record_entry_factory'
+import { ClinicProfessionalFactory } from '#database/factories/clinic_professional_factory'
+import { ProfessionalFactory } from '#database/factories/professional_factory'
+import { PatientClinicFactory } from '#database/factories/patient_clinic_factory'
+import { MedicalRecordFactory } from '#database/factories/medical_record_factory'
+import { PatientFactory } from '#database/factories/patient_factory'
+import { MedicalRecordAttachmentFactory } from '#database/factories/medical_record_attachment_factory'
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createMembership } from '#tests/helpers/membership'
+import { createBearerToken as createToken } from '#tests/helpers/auth'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -9,19 +21,15 @@ import { test } from '@japa/runner'
 import app from '@adonisjs/core/services/app'
 import User from '#models/user'
 import Clinic from '#models/clinic'
-import Role from '#models/role'
-import UserClinicRole from '#models/user_clinic_role'
 import Patient from '#models/patient'
 import PatientClinic from '#models/patient_clinic'
 import MedicalRecord from '#models/medical_record'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAccessLog from '#models/medical_record_access_log'
 import MedicalRecordAttachment from '#models/medical_record_attachment'
-import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-import Appointment from '#models/appointment'
 
 const privateAttachmentStorageRoot = app.makePath('storage/private')
 
@@ -84,21 +92,20 @@ async function createStoredAttachment({
   const resolvedStatusReason =
     status === 'rejected' ? (statusReason ?? 'Arquivo rejeitado durante o processamento') : null
 
-  const attachment = await MedicalRecordAttachment.create({
+  const attachment = await MedicalRecordAttachmentFactory.merge({
     medicalRecordEntryId: entry.id,
     medicalRecordId: medicalRecord.id,
     patientId: patient.id,
     clinicId: clinic.id,
     uploadedByUserId: uploader.id,
     originalName,
-    storageDisk: 'private_fs',
     storageKey,
     contentType,
     sizeInBytes: content.length,
     sha256: createHash('sha256').update(content).digest('hex'),
     status,
     statusReason: resolvedStatusReason,
-  })
+  }).create()
 
   if (persistFile) {
     const storedPath = getStoredAttachmentPath(storageKey)
@@ -113,79 +120,10 @@ async function createStoredAttachment({
   return attachment
 }
 
-async function createUser(email: string) {
-  return User.create({
-    fullName: 'Usuário do Prontuário',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin: false,
-    isActive: true,
-  })
-}
-
-async function createToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: string
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive: true,
-  })
-}
-
 async function createPatient(fullName: string) {
-  const patient = await Patient.create({
-    fullName,
-    birthDate: DateTime.fromISO('1990-05-10'),
-    cpf: null,
-    phone: null,
-    email: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive: true,
-  })
+  const patient = await PatientFactory.merge({ fullName }).create()
 
-  const medicalRecord = await MedicalRecord.create({
-    patientId: patient.id,
-  })
+  const medicalRecord = await MedicalRecordFactory.merge({ patientId: patient.id }).create()
 
   return {
     patient,
@@ -194,12 +132,7 @@ async function createPatient(fullName: string) {
 }
 
 async function createPatientLink({ patient, clinic }: { patient: Patient; clinic: Clinic }) {
-  return PatientClinic.create({
-    patientId: patient.id,
-    clinicId: clinic.id,
-    localRecordNumber: null,
-    isActive: true,
-  })
+  return PatientClinicFactory.merge({ patientId: patient.id, clinicId: clinic.id }).create()
 }
 
 async function createProfessionalLink({
@@ -213,25 +146,17 @@ async function createProfessionalLink({
   fullName: string
   crmNumber: string
 }) {
-  const professional = await Professional.create({
+  const professional = await ProfessionalFactory.merge({
     userId: user.id,
     fullName,
     crmNumber,
-    crmState: 'MG',
-    specialty: 'Clínica Médica',
-    phone: null,
-    email: null,
-    isActive: true,
-  })
+  }).create()
 
-  return ClinicProfessional.create({
+  return ClinicProfessionalFactory.merge({
     clinicId: clinic.id,
     professionalId: professional.id,
-    localCode: null,
     defaultAppointmentDurationMinutes: 60,
-    acceptsAppointments: true,
-    isActive: true,
-  })
+  }).create()
 }
 
 async function createEntry({
@@ -253,18 +178,16 @@ async function createEntry({
   entryTypeCode?: 'consultation' | 'evolution' | 'other'
   content: string
 }) {
-  return MedicalRecordEntry.create({
+  return MedicalRecordEntryFactory.merge({
     medicalRecordId: medicalRecord.id,
     patientId: patient.id,
     clinicId: clinic.id,
     patientClinicId: patientLink.id,
     clinicProfessionalId: professionalLink.id,
-    appointmentId: null,
     authorUserId: author.id,
     entryTypeCode,
     content,
-    correctsEntryId: null,
-  })
+  }).create()
 }
 
 async function createAppointment({
@@ -284,29 +207,18 @@ async function createAppointment({
 }) {
   const isCancelled = status === 'cancelled'
 
-  return Appointment.create({
+  return AppointmentFactory.merge({
     clinicId: clinic.id,
     patientClinicId: patientLink.id,
     clinicProfessionalId: professionalLink.id,
     startsAt,
     endsAt: startsAt.plus({ hours: 1 }),
     status,
-    version: 1,
-    appointmentTypeCode: null,
-    administrativeNote: null,
     createdByUserId: author.id,
-    confirmedAt: null,
-    confirmedByUserId: null,
-    completedAt: null,
-    completedByUserId: null,
     cancelledAt: isCancelled ? DateTime.utc() : null,
     cancelledByUserId: isCancelled ? author.id : null,
     cancellationReasonCode: isCancelled ? 'patient_request' : null,
-    cancellationNote: null,
-    noShowAt: null,
-    noShowByUserId: null,
-    rescheduledFromAppointmentId: null,
-  })
+  }).create()
 }
 
 test.group('Medical records API', (group) => {
@@ -330,10 +242,19 @@ test.group('Medical records API', (group) => {
   })
 
   test('requires authentication and clinical permission', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Permissões do Prontuário')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Permissões do Prontuário',
+    }).create()
 
-    const doctor = await createUser('records.api.doctor@example.com')
-    const receptionist = await createUser('records.api.receptionist@example.com')
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.doctor@example.com',
+    }).create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.receptionist@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -392,13 +313,25 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Primeira Clínica da Timeline Global')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica da Timeline Global',
+    }).create()
 
-    const secondClinic = await createClinic('Segunda Clínica da Timeline Global')
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica da Timeline Global',
+    }).create()
 
-    const firstDoctor = await createUser('records.api.timeline.first@example.com')
+    const firstDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.timeline.first@example.com',
+    }).create()
 
-    const secondDoctor = await createUser('records.api.timeline.second@example.com')
+    const secondDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.timeline.second@example.com',
+    }).create()
 
     await createMembership({
       user: firstDoctor,
@@ -516,13 +449,25 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Clínica de Visualização de Entrada')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Visualização de Entrada',
+    }).create()
 
-    const secondClinic = await createClinic('Clínica de Origem da Entrada')
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Origem da Entrada',
+    }).create()
 
-    const readerDoctor = await createUser('records.api.entry.reader@example.com')
+    const readerDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.entry.reader@example.com',
+    }).create()
 
-    const authorDoctor = await createUser('records.api.entry.author@example.com')
+    const authorDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.entry.author@example.com',
+    }).create()
 
     await createMembership({
       user: readerDoctor,
@@ -639,11 +584,20 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Finalidade do Prontuário')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Finalidade do Prontuário',
+    }).create()
 
-    const unrelatedClinic = await createClinic('Clínica sem Vínculo do Paciente')
+    const unrelatedClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica sem Vínculo do Paciente',
+    }).create()
 
-    const doctor = await createUser('records.api.purpose.doctor@example.com')
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.api.purpose.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -734,8 +688,14 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Escrita Clínica')
-    const doctor = await createUser('records.write.doctor@example.com')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Escrita Clínica',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.write.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -808,11 +768,20 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Autoria Profissional')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Autoria Profissional',
+    }).create()
 
-    const receptionist = await createUser('records.write.receptionist@example.com')
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.write.receptionist@example.com',
+    }).create()
 
-    const administrator = await createUser('records.write.administrator@example.com')
+    const administrator = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.write.administrator@example.com',
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -870,11 +839,20 @@ test.group('Medical records API', (group) => {
   })
 
   test('validates clinical content and appointment compatibility', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Validação da Escrita')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação da Escrita',
+    }).create()
 
-    const firstDoctor = await createUser('records.write.validation.first@example.com')
+    const firstDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.write.validation.first@example.com',
+    }).create()
 
-    const secondDoctor = await createUser('records.write.validation.second@example.com')
+    const secondDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.write.validation.second@example.com',
+    }).create()
 
     await createMembership({
       user: firstDoctor,
@@ -996,13 +974,25 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Primeira Clínica de Correções')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica de Correções',
+    }).create()
 
-    const secondClinic = await createClinic('Segunda Clínica de Correções')
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica de Correções',
+    }).create()
 
-    const firstDoctor = await createUser('records.correction.first@example.com')
+    const firstDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.correction.first@example.com',
+    }).create()
 
-    const secondDoctor = await createUser('records.correction.second@example.com')
+    const secondDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.correction.second@example.com',
+    }).create()
 
     await createMembership({
       user: firstDoctor,
@@ -1149,9 +1139,15 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Correção Concorrente')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Correção Concorrente',
+    }).create()
 
-    const doctor = await createUser('records.correction.concurrent@example.com')
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'records.correction.concurrent@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -1229,8 +1225,14 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Upload de Anexos')
-    const doctor = await createUser('attachments.upload.doctor@example.com')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Upload de Anexos',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.upload.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -1344,8 +1346,14 @@ test.group('Medical records API', (group) => {
 
   for (const failureStage of ['second_move', 'second_save', 'response'] as const) {
     test(`compensates attachment files on ${failureStage} failure`, async ({ client, assert }) => {
-      const clinic = await createClinic('Clínica de Compensação de Anexos')
-      const doctor = await createUser('attachments.compensation@example.com')
+      const clinic = await ClinicFactory.merge({
+        timezone: 'America/Sao_Paulo',
+        name: 'Clínica de Compensação de Anexos',
+      }).create()
+      const doctor = await UserFactory.merge({
+        fullName: 'Usuário do Prontuário',
+        email: 'attachments.compensation@example.com',
+      }).create()
       await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
       const { patient, medicalRecord } = await createPatient('Paciente de Compensação')
       const patientLink = await createPatientLink({ patient, clinic })
@@ -1433,14 +1441,29 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Primeira Clínica de Anexos')
-    const secondClinic = await createClinic('Segunda Clínica de Anexos')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica de Anexos',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica de Anexos',
+    }).create()
 
-    const firstDoctor = await createUser('attachments.scope.first.doctor@example.com')
+    const firstDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.scope.first.doctor@example.com',
+    }).create()
 
-    const secondDoctor = await createUser('attachments.scope.second.doctor@example.com')
+    const secondDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.scope.second.doctor@example.com',
+    }).create()
 
-    const receptionist = await createUser('attachments.scope.receptionist@example.com')
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.scope.receptionist@example.com',
+    }).create()
 
     await createMembership({
       user: firstDoctor,
@@ -1542,8 +1565,14 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Validação de Anexos')
-    const doctor = await createUser('attachments.validation.doctor@example.com')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação de Anexos',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.validation.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -1658,11 +1687,23 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Clínica Leitora de Anexos')
-    const secondClinic = await createClinic('Clínica de Origem dos Anexos')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Leitora de Anexos',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Origem dos Anexos',
+    }).create()
 
-    const readerDoctor = await createUser('attachments.list.reader@example.com')
-    const authorDoctor = await createUser('attachments.list.author@example.com')
+    const readerDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.list.reader@example.com',
+    }).create()
+    const authorDoctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.list.author@example.com',
+    }).create()
 
     await createMembership({
       user: readerDoctor,
@@ -1800,8 +1841,14 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Download de Anexos')
-    const doctor = await createUser('attachments.download.doctor@example.com')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Download de Anexos',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.download.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -1889,8 +1936,14 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Indisponibilidade de Anexos')
-    const doctor = await createUser('attachments.unavailable.doctor@example.com')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Indisponibilidade de Anexos',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.unavailable.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -2001,10 +2054,19 @@ test.group('Medical records API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica de Escopo de Leitura de Anexos')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Escopo de Leitura de Anexos',
+    }).create()
 
-    const doctor = await createUser('attachments.read.doctor@example.com')
-    const receptionist = await createUser('attachments.read.receptionist@example.com')
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.read.doctor@example.com',
+    }).create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário do Prontuário',
+      email: 'attachments.read.receptionist@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,

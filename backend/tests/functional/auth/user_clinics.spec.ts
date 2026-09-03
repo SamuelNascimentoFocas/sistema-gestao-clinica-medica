@@ -1,72 +1,11 @@
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
+import { createBearerToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
 import Role from '#models/role'
-import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-async function createUser({
-  email,
-  isGlobalAdmin = false,
-  isActive = true,
-}: {
-  email: string
-  isGlobalAdmin?: boolean
-  isActive?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário de Teste',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createClinic({ name, isActive = true }: { name: string; isActive?: boolean }) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-  isActive = true,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: 'clinic_admin' | 'receptionist' | 'doctor'
-  isActive?: boolean
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive,
-  })
-}
-
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
 
 test.group('Authenticated user clinics', (group) => {
   group.each.setup(async () => {
@@ -90,26 +29,25 @@ test.group('Authenticated user clinics', (group) => {
     client,
     assert,
   }) => {
-    const user = await createUser({
+    const user = await UserFactory.merge({
+      fullName: 'Usuário de Teste',
       email: 'regular.user@example.com',
-    })
+    }).create()
 
-    const activeClinic = await createClinic({
-      name: 'Clínica Ativa',
-    })
+    const activeClinic = await ClinicFactory.merge({ name: 'Clínica Ativa' }).create()
 
-    const inactiveClinic = await createClinic({
+    const inactiveClinic = await ClinicFactory.merge({
       name: 'Clínica Inativa',
       isActive: false,
-    })
+    }).create()
 
-    const inactiveMembershipClinic = await createClinic({
+    const inactiveMembershipClinic = await ClinicFactory.merge({
       name: 'Clínica com Vínculo Inativo',
-    })
+    }).create()
 
-    const inactiveRoleClinic = await createClinic({
+    const inactiveRoleClinic = await ClinicFactory.merge({
       name: 'Clínica com Perfil Inativo',
-    })
+    }).create()
 
     const activeMembership = await createMembership({
       user,
@@ -159,23 +97,15 @@ test.group('Authenticated user clinics', (group) => {
   })
 
   test('returns every active clinic to the global administrator', async ({ client, assert }) => {
-    const globalAdmin = await createUser({
-      email: 'global.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const globalAdmin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário de Teste', email: 'global.admin@example.com' })
+      .create()
 
-    await createClinic({
-      name: 'Clínica Zeta',
-    })
+    await ClinicFactory.merge({ name: 'Clínica Zeta' }).create()
 
-    await createClinic({
-      name: 'Clínica Alfa',
-    })
+    await ClinicFactory.merge({ name: 'Clínica Alfa' }).create()
 
-    await createClinic({
-      name: 'Clínica Desativada',
-      isActive: false,
-    })
+    await ClinicFactory.merge({ name: 'Clínica Desativada', isActive: false }).create()
 
     const token = await createBearerToken(globalAdmin)
 

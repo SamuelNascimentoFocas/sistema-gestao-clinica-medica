@@ -1,106 +1,36 @@
+import { MedicalRecordAccessLogFactory } from '#database/factories/medical_record_access_log_factory'
+import { MedicalRecordAttachmentFactory } from '#database/factories/medical_record_attachment_factory'
+import { MedicalRecordEntryFactory } from '#database/factories/medical_record_entry_factory'
+import { ClinicProfessionalFactory } from '#database/factories/clinic_professional_factory'
+import { ProfessionalFactory } from '#database/factories/professional_factory'
+import { PatientClinicFactory } from '#database/factories/patient_clinic_factory'
+import { MedicalRecordFactory } from '#database/factories/medical_record_factory'
+import { PatientFactory } from '#database/factories/patient_factory'
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createMembership } from '#tests/helpers/membership'
+import { createBearerToken } from '#tests/helpers/auth'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
 import User from '#models/user'
 import Clinic from '#models/clinic'
-import Role from '#models/role'
-import UserClinicRole from '#models/user_clinic_role'
 import Patient from '#models/patient'
 import PatientClinic from '#models/patient_clinic'
 import MedicalRecord from '#models/medical_record'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAttachment from '#models/medical_record_attachment'
-import MedicalRecordAccessLog, {
-  type MedicalRecordAccessAction,
-  type MedicalRecordAccessPurpose,
+import type {
+  MedicalRecordAccessAction,
+  MedicalRecordAccessPurpose,
 } from '#models/medical_record_access_log'
-import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
 
-type ClinicRoleCode = 'clinic_admin' | 'receptionist' | 'doctor'
-
-async function createUser({
-  email,
-  fullName = 'Usuário de Auditoria',
-  isGlobalAdmin = false,
-}: {
-  email: string
-  fullName?: string
-  isGlobalAdmin?: boolean
-}) {
-  return User.create({
-    fullName,
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive: true,
-  })
-}
-
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: ClinicRoleCode
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive: true,
-  })
-}
-
 async function createPatient(fullName: string) {
-  const patient = await Patient.create({
-    fullName,
-    birthDate: DateTime.fromISO('1990-05-10'),
-    cpf: null,
-    phone: null,
-    email: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive: true,
-  })
+  const patient = await PatientFactory.merge({ fullName }).create()
 
-  const medicalRecord = await MedicalRecord.create({
-    patientId: patient.id,
-  })
+  const medicalRecord = await MedicalRecordFactory.merge({ patientId: patient.id }).create()
 
   return {
     patient,
@@ -109,12 +39,7 @@ async function createPatient(fullName: string) {
 }
 
 async function createPatientLink({ patient, clinic }: { patient: Patient; clinic: Clinic }) {
-  return PatientClinic.create({
-    patientId: patient.id,
-    clinicId: clinic.id,
-    localRecordNumber: null,
-    isActive: true,
-  })
+  return PatientClinicFactory.merge({ patientId: patient.id, clinicId: clinic.id }).create()
 }
 
 async function createProfessionalLink({
@@ -128,25 +53,17 @@ async function createProfessionalLink({
   fullName: string
   crmNumber: string
 }) {
-  const professional = await Professional.create({
+  const professional = await ProfessionalFactory.merge({
     userId: user.id,
     fullName,
     crmNumber,
-    crmState: 'MG',
-    specialty: 'Clínica Médica',
-    phone: null,
-    email: null,
-    isActive: true,
-  })
+  }).create()
 
-  return ClinicProfessional.create({
+  return ClinicProfessionalFactory.merge({
     clinicId: clinic.id,
     professionalId: professional.id,
-    localCode: null,
     defaultAppointmentDurationMinutes: 60,
-    acceptsAppointments: true,
-    isActive: true,
-  })
+  }).create()
 }
 
 async function createEntry({
@@ -166,18 +83,15 @@ async function createEntry({
   author: User
   content: string
 }) {
-  return MedicalRecordEntry.create({
+  return MedicalRecordEntryFactory.merge({
     medicalRecordId: medicalRecord.id,
     patientId: patient.id,
     clinicId: clinic.id,
     patientClinicId: patientLink.id,
     clinicProfessionalId: professionalLink.id,
-    appointmentId: null,
     authorUserId: author.id,
-    entryTypeCode: 'evolution',
     content,
-    correctsEntryId: null,
-  })
+  }).create()
 }
 
 async function createAttachment({
@@ -193,21 +107,16 @@ async function createAttachment({
   clinic: Clinic
   uploader: User
 }) {
-  return MedicalRecordAttachment.create({
+  return MedicalRecordAttachmentFactory.merge({
     medicalRecordEntryId: entry.id,
     medicalRecordId: medicalRecord.id,
     patientId: patient.id,
     clinicId: clinic.id,
     uploadedByUserId: uploader.id,
     originalName: 'exame-confidencial.pdf',
-    storageDisk: 'private_fs',
     storageKey: `medical-records/${medicalRecord.id}/entries/${entry.id}/audit-test.pdf`,
-    contentType: 'application/pdf',
     sizeInBytes: 512,
-    sha256: 'a'.repeat(64),
-    status: 'available',
-    statusReason: null,
-  })
+  }).create()
 }
 
 async function createAccessLog({
@@ -233,7 +142,7 @@ async function createAccessLog({
   purposeNote?: string | null
   attachment?: MedicalRecordAttachment | null
 }) {
-  return MedicalRecordAccessLog.create({
+  return MedicalRecordAccessLogFactory.merge({
     medicalRecordId: medicalRecord.id,
     patientId: patient.id,
     clinicId: clinic.id,
@@ -244,7 +153,7 @@ async function createAccessLog({
     purposeCode,
     purposeNote,
     accessedAt,
-  })
+  }).create()
 }
 
 test.group('Audit logs API', (group) => {
@@ -258,19 +167,25 @@ test.group('Audit logs API', (group) => {
   })
 
   test('requires authentication and audit permission', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Permissões da Auditoria')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Permissões da Auditoria',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.permissions.admin@example.com',
-    })
+    }).create()
 
-    const doctor = await createUser({
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.permissions.doctor@example.com',
-    })
+    }).create()
 
-    const receptionist = await createUser({
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.permissions.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -333,25 +248,33 @@ test.group('Audit logs API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Primeira Clínica de Auditoria')
-    const secondClinic = await createClinic('Segunda Clínica de Auditoria')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica de Auditoria',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica de Auditoria',
+    }).create()
 
-    const localAdmin = await createUser({
+    const localAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.isolation.local@example.com',
-    })
+    }).create()
 
-    const globalAdmin = await createUser({
-      email: 'audit.isolation.global@example.com',
-      isGlobalAdmin: true,
-    })
+    const globalAdmin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário de Auditoria', email: 'audit.isolation.global@example.com' })
+      .create()
 
-    const firstActor = await createUser({
+    const firstActor = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.isolation.first.actor@example.com',
-    })
+    }).create()
 
-    const secondActor = await createUser({
+    const secondActor = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.isolation.second.actor@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: localAdmin,
@@ -450,21 +373,25 @@ test.group('Audit logs API', (group) => {
   })
 
   test('orders, filters and paginates audit logs', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Filtros da Auditoria')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Filtros da Auditoria',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.filters.admin@example.com',
-    })
+    }).create()
 
-    const firstActor = await createUser({
+    const firstActor = await UserFactory.merge({
       email: 'audit.filters.first.actor@example.com',
       fullName: 'Primeiro Médico',
-    })
+    }).create()
 
-    const secondActor = await createUser({
+    const secondActor = await UserFactory.merge({
       email: 'audit.filters.second.actor@example.com',
       fullName: 'Segundo Médico',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -571,11 +498,15 @@ test.group('Audit logs API', (group) => {
   })
 
   test('rejects invalid date ranges and invalid filters', async ({ client }) => {
-    const clinic = await createClinic('Clínica de Validação da Auditoria')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação da Auditoria',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.validation.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -622,16 +553,20 @@ test.group('Audit logs API', (group) => {
   })
 
   test('returns only safe audit information', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Serialização Segura')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Serialização Segura',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Auditoria',
       email: 'audit.serialization.admin@example.com',
-    })
+    }).create()
 
-    const doctor = await createUser({
+    const doctor = await UserFactory.merge({
       email: 'audit.serialization.doctor@example.com',
       fullName: 'Dra. Ana Auditora',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
