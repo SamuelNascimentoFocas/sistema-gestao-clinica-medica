@@ -68,6 +68,7 @@ export async function listProfessionals(
       professionalQuery.preload('user')
     })
     .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
 
   if (filters.isActive !== undefined) {
     query.where('is_active', filters.isActive)

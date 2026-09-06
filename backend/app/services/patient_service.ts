@@ -58,6 +58,7 @@ export async function listPatients(clinicId: string, filters: Infer<typeof listP
       patientQuery.preload('medicalRecord')
     })
     .orderBy('created_at', 'desc')
+    .orderBy('id', 'desc')
 
   if (filters.isActive !== undefined) {
     query.where('is_active', filters.isActive)

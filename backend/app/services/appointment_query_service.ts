@@ -57,6 +57,7 @@ export async function listAppointments(
     })
     .preload('createdByUser')
     .orderBy('starts_at', 'asc')
+    .orderBy('id', 'asc')
 
   if (filters.status) {
     query.where('status', filters.status)
