@@ -372,10 +372,10 @@ npm test
 npm run build
 ```
 
-A validação final do MVP aprovou:
+A validação atual da branch de adequação aprovou:
 
 ```text
-88 testes
+98 testes funcionais
 ```
 
 A suíte de testes aplica as migrations automaticamente antes da execução e reverte as migrations ao final da validação observada.
@@ -390,8 +390,9 @@ npm test
 npm run build
 ```
 
-`npm test` executa 22 testes focados: oito da camada HTTP browser/Axios e 14 de
-schemas/resolver/estado dos formulários RHF/Zod, descritos em
+`npm test` executa 24 testes focados: oito da camada HTTP browser/Axios, 14 de
+schemas/resolver/estado dos formulários RHF/Zod e dois da infraestrutura remota de
+DataTable. Os formulários estão descritos em
 [FORMULARIOS.md](FORMULARIOS.md). Usa `node:test`, sem iniciar Next.js, backend
 ou PostgreSQL, e a execução nativa de
 TypeScript do Node.js 24.15.0 listado nos pré-requisitos, sem runner adicional.

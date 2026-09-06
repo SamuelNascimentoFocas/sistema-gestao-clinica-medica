@@ -225,9 +225,10 @@ Comandos mantêm nomes explícitos, sem serem artificialmente transformados em C
 As quatro transições de consulta ficam juntas; perfil/status local e ativação dos
 dois tipos de item de agenda também permanecem agrupados por responsabilidade.
 
-A listagem `ClinicContextsController.members` passa a `ClinicMembersController.index`,
-sem mudar a resposta de `GET /api/v1/clinics/:clinicId/members` nem acrescentar
-paginação. `showEntry`/`storeEntry` passam a `MedicalRecordEntriesController.show`/
+Na Fase 4, a listagem `ClinicContextsController.members` passou a
+`ClinicMembersController.index` sem mudar, naquele momento, a resposta de
+`GET /api/v1/clinics/:clinicId/members` nem acrescentar paginação.
+`showEntry`/`storeEntry` passam a `MedicalRecordEntriesController.show`/
 `store`; criação/edição de disponibilidades e bloqueios passam a `store`/`update`
 dos respectivos controllers. Nenhum corpo de action é reescrito: preservam-se
 parâmetros, precedência de busca/validação, validators, respostas e erros.
@@ -406,6 +407,37 @@ O inventário, os 14 schemas, as diferenças browser/BFF/Vine deliberadamente
 mantidas e os testes focados estão em [FORMULARIOS.md](FORMULARIOS.md).
 O runner frontend soma 22 testes (oito HTTP e 14 de formulários), sem infraestrutura
 nova de componentes/E2E. Backend e BFF não foram modificados nesta fase.
+
+### Query, paginação e DataTable — Fase 9
+
+As listagens de membros, pacientes, profissionais, consultas e auditoria usam uma
+DataTable route-first. Cada tabela recebe uma rota BFF relativa, constrói sua query e
+consulta pelo `browserApi`/Axios. O fluxo permanece navegador → BFF Next.js → backend
+AdonisJS; URLs ou credenciais privadas do backend não são expostas ao navegador.
+
+A navegação usa apenas os metadados numéricos `total`, `perPage`, `currentPage` e
+`lastPage`. URLs produzidas pelo paginator Lucid não são usadas. Consultas e auditoria
+mantêm filtros na URL pública da página e preservam as conversões de data e fuso no
+Server Component. Não há sorting interativo.
+
+`GET /api/v1/clinics/:clinicId/members` passa a aceitar `page`, `perPage`, `search`,
+`roleCode` e `isActive` e retorna `{ data, meta }`. Helpers server-side que precisam
+de todos os membros, como as opções de vínculo profissional e o filtro de auditoria,
+percorrem todas as páginas em lotes de 100 e validam os metadados antes de avançar.
+
+Clínicas acessíveis, timeline do prontuário, anexos, agenda profissional agregada e
+dados auxiliares de selects mantêm suas apresentações especializadas.
+
+Dois testes `node:test` da infraestrutura remota elevam a suíte frontend atual de
+22 para 24 testes, sem adicionar infraestrutura de renderização de componentes.
+
+```text
+ROUTES=59
+VALIDATION_CONTRACTS=47
+QUERY_CONTRACTS=12
+BODY_UPLOAD_CONTRACTS=35
+NEW_QUERY_CONTRACT=GET /api/v1/clinics/:clinicId/members:query
+```
 
 ### Proteção de interface
 

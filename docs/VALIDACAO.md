@@ -233,6 +233,11 @@ Verificar:
 Com administrador de consultório:
 
 - [ ] Lista membros da clínica.
+- [ ] Sem query, usa `page=1` e `perPage=20`.
+- [ ] Retorna `{ data, meta }` com `total`, `perPage`, `currentPage` e `lastPage`.
+- [ ] Filtra por busca de nome/e-mail, perfil e status do vínculo.
+- [ ] Mantém isolamento por clínica durante filtros e paginação.
+- [ ] Ordena por criação crescente e usa o identificador como desempate.
 - [ ] Cria usuário local com perfil válido.
 - [ ] Altera perfil de membro.
 - [ ] Ativa ou inativa vínculo permitido.
@@ -424,7 +429,9 @@ Critérios:
 Evidência da validação final:
 
 ```text
-Tests 88 passed (88)
+Tests 98 passed (98)
+Contratos HTTP: 59 rotas, 47 validações (12 query e 35 body/upload)
+Novo contrato: GET /api/v1/clinics/:clinicId/members:query
 Build completed
 ```
 
@@ -434,6 +441,7 @@ Execute:
 
 ```cmd
 cd frontend
+npm test
 npm run typecheck
 npm run lint
 npm run build
@@ -441,17 +449,18 @@ npm run build
 
 Critérios:
 
+- [ ] Os 24 testes frontend passam.
 - [ ] TypeScript termina sem erros.
 - [ ] ESLint termina sem erros.
 - [ ] Build do Next.js termina com sucesso.
 - [ ] Rotas autenticadas dinâmicas são reconhecidas.
 - [ ] Não há script inexistente sendo usado como critério.
+- [ ] As cinco DataTables consultam rotas BFF relativas e tratam loading, erro e vazio.
+- [ ] Paginação usa metadados numéricos, sem URLs do paginator Lucid.
 
-Observação:
-
-```text
-O frontend não possui atualmente scripts próprios de teste automatizado ou formatação.
-```
+Evidência da Fase 9: membros direcionados `4/4`, contratos aprovados, backend
+funcional `98/98`, frontend `24/24`, typecheck, lint, build e `git diff --check`
+aprovados.
 
 ## 20. Validação do Git
 

@@ -262,10 +262,11 @@ cd backend
 npm test
 ```
 
-A suíte aplica as migrations antes dos testes. Na validação final do MVP, foram aprovados:
+A suíte aplica as migrations antes dos testes. Na validação atual da branch de adequação,
+foram aprovados:
 
 ```text
-88 testes funcionais
+98 testes funcionais
 ```
 
 O banco de testes deve ser separado do banco de desenvolvimento.

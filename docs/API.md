@@ -321,6 +321,31 @@ users.read
 
 Finalidade: listar membros do consultório.
 
+Query params opcionais:
+
+- `page`: página atual, com default `1`;
+- `perPage`: quantidade por página, com default `20` e máximo `100`;
+- `search`: busca textual por nome ou e-mail do usuário;
+- `roleCode`: perfil local (`clinic_admin`, `receptionist` ou `doctor`);
+- `isActive`: status do vínculo (`true` ou `false`).
+
+A resposta usa o envelope paginado do Lucid:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "total": 0,
+    "perPage": 20,
+    "currentPage": 1,
+    "lastPage": 1
+  }
+}
+```
+
+Os itens de `data` preservam o vínculo e as relações `user` e `role`. A ordenação
+é determinística por `created_at ASC, id ASC`, sempre isolada por `clinicId`.
+
 ### `POST /api/v1/clinics/:clinicId/members`
 
 Permissões exigidas em conjunto:
