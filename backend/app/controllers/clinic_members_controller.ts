@@ -3,8 +3,8 @@ import UserClinicRole from '#models/user_clinic_role'
 import db from '@adonisjs/lucid/services/db'
 import User from '#models/user'
 import Role from '#models/role'
-import { createClinicMemberValidator } from '#validators/clinic_member'
-import { loadMembershipRelations } from '#services/clinic_member_query_service'
+import { createClinicMemberValidator, listClinicMembersValidator } from '#validators/clinic_member'
+import { listClinicMembers, loadMembershipRelations } from '#services/clinic_member_query_service'
 
 function passwordExceedsBcryptLimit(password: string) {
   return Buffer.byteLength(password, 'utf8') > 72
@@ -15,21 +15,19 @@ async function emailAlreadyExists(emailNormalized: string) {
 }
 
 export default class ClinicMembersController {
-  async index({ clinicAuthorization, response }: HttpContext) {
+  async index({ clinicAuthorization, request, response }: HttpContext) {
     if (!clinicAuthorization) {
       return response.internalServerError({
         message: 'Contexto de autorização não inicializado',
       })
     }
 
-    const memberships = await UserClinicRole.query()
-      .where('clinic_id', clinicAuthorization.clinic.id)
-      .preload('user')
-      .preload('role')
-      .orderBy('created_at', 'asc')
+    const filters = await listClinicMembersValidator.validate(request.qs())
+    const memberships = await listClinicMembers(clinicAuthorization.clinic.id, filters)
 
     return response.ok({
-      data: memberships.map((membership) => membership.serialize()),
+      data: memberships.all().map((membership) => membership.serialize()),
+      meta: memberships.getMeta(),
     })
   }
 

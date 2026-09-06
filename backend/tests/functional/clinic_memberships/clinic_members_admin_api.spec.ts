@@ -1,8 +1,11 @@
 import { UserFactory } from '#database/factories/user_factory'
 import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserClinicRoleFactory } from '#database/factories/user_clinic_role_factory'
+import Role from '#models/role'
 import { createBearerToken as createToken } from '#tests/helpers/auth'
 import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
+import { DateTime } from 'luxon'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
 
@@ -62,6 +65,277 @@ test.group('Clinic-scoped member administration', (group) => {
     })
 
     loginResponse.assertStatus(200)
+  })
+
+  test('uses clinic member pagination defaults and preserves the item contract', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Contrato' }).create()
+    const administrator = await UserFactory.merge({
+      fullName: 'Administrador do Contrato',
+      email: 'members.contract.admin@example.com',
+    }).create()
+    const membership = await createMembership({
+      user: administrator,
+      clinic,
+      roleCode: 'clinic_admin',
+    })
+    const token = await createToken(administrator)
+
+    const response = await client
+      .get(`/api/v1/clinics/${clinic.id}/members`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    response.assertStatus(200)
+
+    const body = response.body()
+
+    assert.lengthOf(body.data, 1)
+    assert.deepInclude(body.meta, {
+      total: 1,
+      perPage: 20,
+      currentPage: 1,
+      lastPage: 1,
+    })
+
+    const member = body.data[0]
+
+    assert.deepEqual(Object.keys(member).sort(), [
+      'clinicId',
+      'createdAt',
+      'id',
+      'isActive',
+      'role',
+      'roleId',
+      'updatedAt',
+      'user',
+      'userId',
+    ])
+    assert.deepEqual(Object.keys(member.user).sort(), [
+      'createdAt',
+      'email',
+      'fullName',
+      'id',
+      'isActive',
+      'isGlobalAdmin',
+      'lastLoginAt',
+      'updatedAt',
+    ])
+    assert.deepEqual(Object.keys(member.role).sort(), [
+      'code',
+      'createdAt',
+      'description',
+      'id',
+      'isActive',
+      'isSystem',
+      'name',
+      'updatedAt',
+    ])
+    assert.equal(member.id, membership.id)
+    assert.equal(member.userId, administrator.id)
+    assert.equal(member.clinicId, clinic.id)
+    assert.equal(member.roleId, membership.roleId)
+    assert.isTrue(member.isActive)
+    assert.equal(member.user.id, administrator.id)
+    assert.equal(member.user.fullName, 'Administrador do Contrato')
+    assert.equal(member.user.email, 'members.contract.admin@example.com')
+    assert.equal(member.role.code, 'clinic_admin')
+    assert.isUndefined(member.user.passwordHash)
+    assert.isUndefined(member.user.emailNormalized)
+  })
+
+  test('paginates and filters clinic members without crossing clinic boundaries', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Filtros' }).create()
+    const otherClinic = await ClinicFactory.merge({ name: 'Outra Clínica' }).create()
+    const administrator = await UserFactory.merge({
+      fullName: 'Administrador Local',
+      email: 'members.pagination.admin@example.com',
+    }).create()
+
+    await createMembership({ user: administrator, clinic, roleCode: 'clinic_admin' })
+
+    const firstReceptionist = await UserFactory.merge({
+      fullName: 'Membro Filtro Alfa',
+      email: 'member.alpha@example.com',
+    }).create()
+    const secondReceptionist = await UserFactory.merge({
+      fullName: 'Membro Beta',
+      email: 'member.filter.beta@example.com',
+    }).create()
+    const nonMatchingReceptionist = await UserFactory.merge({
+      fullName: 'Membro Sem Correspondência',
+      email: 'member.no.match@example.com',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Membro Filtro Médico',
+      email: 'member.doctor@example.com',
+    }).create()
+    const inactiveReceptionist = await UserFactory.merge({
+      fullName: 'Membro Filtro Inativo',
+      email: 'member.inactive@example.com',
+    }).create()
+    const memberFromOtherClinic = await UserFactory.merge({
+      fullName: 'Membro Filtro Outra Clínica',
+      email: 'member.other@example.com',
+    }).create()
+
+    const expectedMemberships = await Promise.all([
+      createMembership({ user: firstReceptionist, clinic, roleCode: 'receptionist' }),
+      createMembership({ user: secondReceptionist, clinic, roleCode: 'receptionist' }),
+    ])
+
+    await createMembership({
+      user: nonMatchingReceptionist,
+      clinic,
+      roleCode: 'receptionist',
+    })
+    await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+    await createMembership({
+      user: inactiveReceptionist,
+      clinic,
+      roleCode: 'receptionist',
+      isActive: false,
+    })
+    await createMembership({
+      user: memberFromOtherClinic,
+      clinic: otherClinic,
+      roleCode: 'receptionist',
+    })
+
+    const token = await createToken(administrator)
+    const requestedIds: string[] = []
+
+    for (const page of [1, 2]) {
+      const response = await client
+        .get(
+          `/api/v1/clinics/${clinic.id}/members?page=${page}&perPage=1&search=FILT&roleCode=receptionist&isActive=true`
+        )
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+
+      response.assertStatus(200)
+      assert.lengthOf(response.body().data, 1)
+      assert.deepInclude(response.body().meta, {
+        total: 2,
+        perPage: 1,
+        currentPage: page,
+        lastPage: 2,
+      })
+      requestedIds.push(response.body().data[0].id)
+    }
+
+    assert.deepEqual(
+      requestedIds.sort(),
+      expectedMemberships.map((membership) => membership.id).sort()
+    )
+  })
+
+  test('orders clinic members by creation time and id', async ({ client, assert }) => {
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Ordenação' }).create()
+    const administrator = await UserFactory.merge({
+      fullName: 'Administrador de Ordenação',
+      email: 'members.ordering.admin@example.com',
+    }).create()
+
+    await createMembership({ user: administrator, clinic, roleCode: 'clinic_admin' })
+
+    const firstUser = await UserFactory.merge({
+      fullName: 'Primeiro Membro Ordenado',
+      email: 'members.ordering.first@example.com',
+    }).create()
+    const secondUser = await UserFactory.merge({
+      fullName: 'Segundo Membro Ordenado',
+      email: 'members.ordering.second@example.com',
+    }).create()
+    const newerUser = await UserFactory.merge({
+      fullName: 'Membro Mais Recente',
+      email: 'members.ordering.newer@example.com',
+    }).create()
+
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
+    const olderCreatedAt = DateTime.fromISO('2026-09-03T11:00:00.000Z')
+    const newerCreatedAt = DateTime.fromISO('2026-09-03T12:00:00.000Z')
+    const firstMembershipId = '00000000-0000-4000-8000-000000000001'
+    const secondMembershipId = '00000000-0000-4000-8000-000000000002'
+    const newerMembershipId = '00000000-0000-4000-8000-000000000000'
+
+    await UserClinicRoleFactory.merge({
+      id: secondMembershipId,
+      userId: secondUser.id,
+      clinicId: clinic.id,
+      roleId: receptionistRole.id,
+      isActive: true,
+      createdAt: olderCreatedAt,
+    }).create()
+    await UserClinicRoleFactory.merge({
+      id: newerMembershipId,
+      userId: newerUser.id,
+      clinicId: clinic.id,
+      roleId: receptionistRole.id,
+      isActive: true,
+      createdAt: newerCreatedAt,
+    }).create()
+    await UserClinicRoleFactory.merge({
+      id: firstMembershipId,
+      userId: firstUser.id,
+      clinicId: clinic.id,
+      roleId: receptionistRole.id,
+      isActive: true,
+      createdAt: olderCreatedAt,
+    }).create()
+
+    const token = await createToken(administrator)
+    const response = await client
+      .get(
+        `/api/v1/clinics/${clinic.id}/members?page=1&perPage=20&roleCode=receptionist&isActive=true`
+      )
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    response.assertStatus(200)
+    assert.deepInclude(response.body().meta, {
+      total: 3,
+      perPage: 20,
+      currentPage: 1,
+      lastPage: 1,
+    })
+    assert.deepEqual(
+      response.body().data.map((membership: { id: string }) => membership.id),
+      [firstMembershipId, secondMembershipId, newerMembershipId]
+    )
+  })
+
+  test('rejects invalid clinic member pagination parameters', async ({ client }) => {
+    const clinic = await ClinicFactory.merge({
+      name: 'Clínica de Paginação Inválida',
+    }).create()
+    const administrator = await UserFactory.merge({
+      fullName: 'Administrador de Paginação',
+      email: 'members.invalid-pagination.admin@example.com',
+    }).create()
+
+    await createMembership({ user: administrator, clinic, roleCode: 'clinic_admin' })
+
+    const token = await createToken(administrator)
+
+    const invalidPageResponse = await client
+      .get(`/api/v1/clinics/${clinic.id}/members?page=0`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    invalidPageResponse.assertStatus(422)
+
+    const invalidPaginationResponse = await client
+      .get(`/api/v1/clinics/${clinic.id}/members?perPage=101`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    invalidPaginationResponse.assertStatus(422)
   })
 
   test('updates local role and status but rejects cross-clinic access', async ({

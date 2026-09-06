@@ -227,6 +227,8 @@ const contractsFixture = {
       'd9899ea998ac0e2428aa98460fbc6afb7943c01b826c0e0cecca70cbdac72556',
     'root GET /api/v1/clinics/:clinicId/audit-logs:query':
       '2c32574ef234836c4b2b48c4d292055bfbe1ac2411eee087f35a8043bcbca37d',
+    'root GET /api/v1/clinics/:clinicId/members:query':
+      'df74892863be3f6f6bd25f300c6ab182dd77e458741aca299ce505c198d3d8f5',
     'root GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments/:attachmentId/download:query':
       'e30718445cbc3972e457ed7681f45c64295c55625f923d25082fd89adc61c29e',
     'root GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments:query':
