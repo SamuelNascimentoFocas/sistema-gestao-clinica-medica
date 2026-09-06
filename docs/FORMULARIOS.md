@@ -1,4 +1,4 @@
-# Formulários frontend — Fase 8
+# Formulários frontend — Fases 8 e 10
 
 ## Escopo e decisão
 
@@ -176,3 +176,66 @@ A revisão estrutural dos 17 arquivos compara com o HEAD anterior à Fase 8 as
 19 configurações de chamada HTTP, atributos de validação HTML e normalizações.
 As expressões de URL, método, headers e payload permanecem equivalentes; o BFF,
 backend, cliente Axios e helper de datas não fazem parte do diff.
+
+## Evolução de create/edit — Fase 10
+
+A unificação foi aplicada somente aos recursos em que create e edit representam a
+mesma operação semântica sobre o mesmo conjunto de campos. Os schemas Zod, os
+payloads e a arquitetura navegador → BFF → backend permaneceram inalterados.
+
+### Pacientes
+
+`PatientForm` é a única implementação real dos campos de paciente. No modo create,
+usa valores vazios e `POST`; no modo edit, usa `patientLinkToForm(...)` e `PATCH`.
+O `patientFormSchema`, o conjunto completo de campos enviado e as strings opcionais
+vazias foram preservados, mantendo no BFF a normalização posterior para `null`.
+`create-patient-card.tsx` e `edit-patient-card.tsx` permanecem como wrappers finos.
+
+Pacientes não usam Dialog: o formulário é extenso e continua adequado à superfície
+existente em página/card.
+
+### Disponibilidade semanal
+
+`WeeklyAvailabilityFormDialog` é a implementação única de criação e edição:
+
+- create usa `POST`;
+- edit usa `PATCH` e prefill por `weeklyAvailabilityToForm(...)`;
+- `weeklyAvailabilityFormSchema` e o payload com `weekday`, `startTime` e `endTime`
+  foram preservados;
+- `reset(...)` sincroniza a troca de registro, modo e profissional.
+
+O Dialog é adequado por ser um formulário curto e contextual.
+
+### Bloqueios de agenda
+
+`ScheduleBlockFormDialog` é a implementação única de criação e edição:
+
+- create usa `POST`;
+- edit usa `PATCH` e prefill por `scheduleBlockToForm(...)`;
+- `scheduleBlockFormSchema` foi preservado;
+- o payload continua convertendo início e fim com `Date(...).toISOString()`;
+- `reset(...)` sincroniza a troca de registro, modo e profissional.
+
+Nos dois formulários de agenda, o Dialog fecha após sucesso confirmado ou
+cancelamento e permanece aberto em erro HTTP ou de rede. Permissões, seleção do
+profissional, callbacks e atualização das listas continuam no manager.
+
+### Wrapper e exceções deliberadas
+
+O wrapper `frontend/src/components/ui/dialog.tsx` usa
+`@base-ui/react/dialog`, já presente no projeto. Nenhuma dependência foi instalada.
+Portal, foco, Escape e restauração de foco ficam delegados ao primitive acessível do
+Base UI.
+
+Não foram unificados:
+
+- profissionais: criação global com vínculo versus edição somente do vínculo;
+- consultas: criação completa versus edição parcial e reagendamento especializado;
+- membros da clínica: criação de usuário/vínculo versus comandos separados de
+  papel e status;
+- prontuários, correções e anexos: modelo append-only e ações clínicas
+  especializadas.
+
+Essas exceções são decisões arquiteturais, não pendências técnicas. A Fase 10 não
+alterou backend, contratos HTTP, BFF Route Handlers, schemas Zod, dependências,
+DataTables route-first da Fase 9, autenticação ou regras de permissão.

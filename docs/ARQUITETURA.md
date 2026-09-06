@@ -439,6 +439,48 @@ BODY_UPLOAD_CONTRACTS=35
 NEW_QUERY_CONTRACT=GET /api/v1/clinics/:clinicId/members:query
 ```
 
+### Formulários compartilhados e Dialog — Fase 10
+
+A unificação de criação e edição foi aplicada somente quando as duas operações
+possuem equivalência semântica real: pacientes, disponibilidade semanal e bloqueios
+de agenda. Ela não foi generalizada para todos os formulários do sistema.
+
+`PatientForm` concentra os campos e a submissão de pacientes. Sem paciente, usa os
+valores vazios e `POST`; com paciente, usa `patientLinkToForm(...)` e `PATCH`. O
+`patientFormSchema`, o conjunto completo de campos e o envio das strings opcionais
+vazias foram preservados; a conversão posterior para `null` continua no BFF.
+`create-patient-card.tsx` e `edit-patient-card.tsx` são wrappers finos. Pacientes
+permanecem na superfície de página/card, sem Dialog, porque o formulário é extenso.
+
+Os formulários curtos e contextuais da agenda usam Dialog:
+
+- `WeeklyAvailabilityFormDialog` implementa create com `POST` e edit com `PATCH`,
+  preservando `weeklyAvailabilityFormSchema`, o prefill por
+  `weeklyAvailabilityToForm(...)` e o payload de dia e horários;
+- `ScheduleBlockFormDialog` implementa create com `POST` e edit com `PATCH`,
+  preservando `scheduleBlockFormSchema`, o prefill por `scheduleBlockToForm(...)`
+  e a conversão `Date(...).toISOString()` de início e fim.
+
+Ambos sincronizam o estado do React Hook Form com `reset(...)` quando mudam modo,
+registro ou profissional. Fecham após sucesso confirmado ou cancelamento e
+permanecem abertos em erro HTTP ou de rede. Permissões, seleção do profissional,
+callbacks e atualização das listas continuam sob responsabilidade do manager.
+
+O wrapper `frontend/src/components/ui/dialog.tsx` usa o primitive já instalado
+`@base-ui/react/dialog`; nenhuma dependência foi adicionada. Portal, foco,
+fechamento por Escape e restauração de foco permanecem delegados ao Base UI.
+
+Profissionais, consultas, membros da clínica e prontuários/correções/anexos foram
+deliberadamente mantidos especializados: profissionais distinguem criação global
+com vínculo de edição apenas do vínculo; consultas distinguem criação completa de
+edição parcial e reagendamento; membros usam criação de usuário/vínculo e comandos
+separados de papel/status; prontuários seguem o modelo append-only e ações clínicas
+especializadas. Essas diferenças não são pendências técnicas.
+
+A Fase 10 não alterou backend, contratos HTTP, BFF Route Handlers, schemas Zod,
+dependências, DataTables route-first, autenticação ou regras de permissão. O fluxo
+continua navegador → BFF Next.js → backend AdonisJS.
+
 ### Proteção de interface
 
 A interface:
