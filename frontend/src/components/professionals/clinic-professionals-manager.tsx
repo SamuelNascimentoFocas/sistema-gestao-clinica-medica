@@ -1,14 +1,13 @@
 "use client";
 
-import {
-  browserApi,
-  isSuccessfulResponse,
-  readBrowserJson,
-  type BrowserResponse,
-} from "@/lib/client/browser-api";
-
-import { FormEvent, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  RemoteDataTable,
+  type RemoteDataTableColumn,
+} from "@/components/data-table/remote-data-table";
+import { CreateProfessionalCard } from "@/components/professionals/create-professional-card";
+import { EditProfessionalLinkCard } from "@/components/professionals/edit-professional-link-card";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -19,28 +18,29 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
 import type {
   AppointmentAcceptanceFilter,
   ClinicProfessionalLink,
   ProfessionalLinkResponse,
-  ProfessionalLinksResponse,
   ProfessionalStatusFilter,
   ProfessionalUserOption,
 } from "@/types/professional";
-import { CreateProfessionalCard } from "@/components/professionals/create-professional-card";
-import { EditProfessionalLinkCard } from "@/components/professionals/edit-professional-link-card";
 
 type ClinicProfessionalsManagerProps = {
   clinicId: string;
-  initialProfessionals: ProfessionalLinksResponse;
   canCreate: boolean;
   canUpdate: boolean;
   doctorOptions: ProfessionalUserOption[];
 };
 
 async function readResponseMessage(response: BrowserResponse) {
-  const body: unknown = await readBrowserJson(response)
-    .catch(() => null);
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -54,257 +54,73 @@ async function readResponseMessage(response: BrowserResponse) {
   return "Não foi possível concluir a operação";
 }
 
-function getProfessionalContact(
-  professionalLink: ClinicProfessionalLink,
-) {
+function getProfessionalContact(professionalLink: ClinicProfessionalLink) {
   const { professional } = professionalLink;
-
-  return [professional.phone, professional.email]
-    .filter(Boolean)
-    .join(" · ");
+  return [professional.phone, professional.email].filter(Boolean).join(" · ");
 }
 
 export function ClinicProfessionalsManager({
   clinicId,
-  initialProfessionals,
   canCreate,
   canUpdate,
   doctorOptions,
 }: ClinicProfessionalsManagerProps) {
   const router = useRouter();
-
-  const [professionals, setProfessionals] =
-    useState<ProfessionalLinksResponse>(
-      initialProfessionals,
-    );
-
+  const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ProfessionalStatusFilter>("all");
+  const [appointmentAcceptanceFilter, setAppointmentAcceptanceFilter] =
+    useState<AppointmentAcceptanceFilter>("all");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [editingProfessional, setEditingProfessional] =
+    useState<ClinicProfessionalLink | null>(null);
+  const [statusProfessionalId, setStatusProfessionalId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const [statusFilter, setStatusFilter] =
-    useState<ProfessionalStatusFilter>("all");
-
-  const [
-    appointmentAcceptanceFilter,
-    setAppointmentAcceptanceFilter,
-  ] = useState<AppointmentAcceptanceFilter>("all");
-
-  const [isLoading, setIsLoading] = useState(false);
-
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  const [successMessage, setSuccessMessage] = useState<
-    string | null
-  >(null);
-
-  const [
-    editingProfessionalId,
-    setEditingProfessionalId,
-  ] = useState<string | null>(null);
-
-  const [
-    statusProfessionalId,
-    setStatusProfessionalId,
-  ] = useState<string | null>(null);
-
-  async function loadProfessionals({
-    page,
-    search,
-    status,
-    appointmentAcceptance,
-  }: {
-    page: number;
-    search: string;
-    status: ProfessionalStatusFilter;
-    appointmentAcceptance: AppointmentAcceptanceFilter;
-  }) {
-    setIsLoading(true);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-
-    const query = new URLSearchParams({
-      page: String(page),
-      perPage: String(
-        professionals.meta.perPage || 20,
-      ),
-    });
-
-    if (search) {
-      query.set("search", search);
-    }
-
-    if (status === "active") {
-      query.set("isActive", "true");
-    }
-
-    if (status === "inactive") {
-      query.set("isActive", "false");
-    }
-
-    if (appointmentAcceptance === "accepts") {
-      query.set("acceptsAppointments", "true");
-    }
-
-    if (
-      appointmentAcceptance === "does-not-accept"
-    ) {
-      query.set("acceptsAppointments", "false");
-    }
-
-    try {
-      const response = await browserApi.request<string>({
-        url: `/api/clinics/${encodeURIComponent(
-          clinicId,
-        )}/professionals?${query.toString()}`,
-        method: "GET",
-        fetchOptions: { cache: "no-store" },
-      });
-
-      if (response.status === 401) {
-        router.replace("/login");
-        router.refresh();
-
-        return;
-      }
-
-      if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
-
-        return;
-      }
-
-      const body =
-        (await readBrowserJson(response)) as ProfessionalLinksResponse;
-
-      setProfessionals(body);
-    } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsLoading(false);
-    }
+  function reloadProfessionals() {
+    setRefreshKey((current) => current + 1);
   }
 
-  async function handleSearch(
-    event: FormEvent<HTMLFormElement>,
-  ) {
+  function handleSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const normalizedSearch = searchInput.trim();
-
-    setAppliedSearch(normalizedSearch);
-
-    await loadProfessionals({
-      page: 1,
-      search: normalizedSearch,
-      status: statusFilter,
-      appointmentAcceptance:
-        appointmentAcceptanceFilter,
-    });
+    setAppliedSearch(searchInput.trim());
+    setPage(1);
   }
 
-  async function handleStatusChange(
-    value: ProfessionalStatusFilter,
-  ) {
+  function handleStatusChange(value: ProfessionalStatusFilter) {
     setStatusFilter(value);
-
-    await loadProfessionals({
-      page: 1,
-      search: appliedSearch,
-      status: value,
-      appointmentAcceptance:
-        appointmentAcceptanceFilter,
-    });
+    setPage(1);
   }
 
-  async function handleAppointmentAcceptanceChange(
-    value: AppointmentAcceptanceFilter,
-  ) {
+  function handleAppointmentAcceptanceChange(value: AppointmentAcceptanceFilter) {
     setAppointmentAcceptanceFilter(value);
-
-    await loadProfessionals({
-      page: 1,
-      search: appliedSearch,
-      status: statusFilter,
-      appointmentAcceptance: value,
-    });
+    setPage(1);
   }
 
-  async function clearFilters() {
+  function clearFilters() {
     setSearchInput("");
     setAppliedSearch("");
     setStatusFilter("all");
     setAppointmentAcceptanceFilter("all");
-
-    await loadProfessionals({
-      page: 1,
-      search: "",
-      status: "all",
-      appointmentAcceptance: "all",
-    });
+    setPage(1);
   }
 
-  function handleProfessionalCreated(
-    professionalLink: ClinicProfessionalLink,
-  ) {
-    setSearchInput("");
-    setAppliedSearch("");
-    setStatusFilter("all");
-    setAppointmentAcceptanceFilter("all");
-
-    setProfessionals((current) => {
-      const perPage = current.meta.perPage || 20;
-      const total = current.meta.total + 1;
-
-      return {
-        data: [
-          professionalLink,
-          ...current.data.filter(
-            (item) => item.id !== professionalLink.id,
-          ),
-        ].slice(0, perPage),
-        meta: {
-          ...current.meta,
-          total,
-          currentPage: 1,
-          lastPage: Math.max(
-            1,
-            Math.ceil(total / perPage),
-          ),
-        },
-      };
-    });
+  function handleProfessionalCreated() {
+    clearFilters();
+    reloadProfessionals();
   }
 
-  function handleProfessionalUpdated(
-    professionalLink: ClinicProfessionalLink,
-  ) {
-    setProfessionals((current) => ({
-      ...current,
-      data: current.data.map((item) =>
-        item.id === professionalLink.id
-          ? professionalLink
-          : item,
-      ),
-    }));
-
-    setEditingProfessionalId(null);
+  function handleProfessionalUpdated() {
+    setEditingProfessional(null);
     setErrorMessage(null);
-    setSuccessMessage(
-      "Configurações do vínculo profissional atualizadas.",
-    );
+    setSuccessMessage("Configurações do vínculo profissional atualizadas.");
+    reloadProfessionals();
   }
 
-  async function handleProfessionalStatusToggle(
-    professionalLink: ClinicProfessionalLink,
-  ) {
-    const professionalId =
-      professionalLink.professional.id;
+  async function handleProfessionalStatusToggle(professionalLink: ClinicProfessionalLink) {
+    const professionalId = professionalLink.professional.id;
 
     setStatusProfessionalId(professionalId);
     setErrorMessage(null);
@@ -314,105 +130,39 @@ export function ClinicProfessionalsManager({
       const response = await browserApi.request<string>({
         url: `/api/clinics/${encodeURIComponent(
           clinicId,
-        )}/professionals/${encodeURIComponent(
-          professionalId,
-        )}/status`,
+        )}/professionals/${encodeURIComponent(professionalId)}/status`,
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        data: JSON.stringify({
-          isActive: !professionalLink.isActive,
-        }),
+        headers: { "Content-Type": "application/json" },
+        data: JSON.stringify({ isActive: !professionalLink.isActive }),
       });
 
       if (response.status === 401) {
         router.replace("/login");
         router.refresh();
-
         return;
       }
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
-
+        setErrorMessage(await readResponseMessage(response));
         return;
       }
 
-      const body =
-        (await readBrowserJson(response)) as ProfessionalLinkResponse;
+      const body = (await readBrowserJson(response)) as ProfessionalLinkResponse;
 
-      const updatedProfessionalLink =
-        body.professionalLink;
+      if (!body.professionalLink) {
+        setErrorMessage("O servidor retornou um vínculo inválido");
+        return;
+      }
 
-      setProfessionals((current) => {
-        const matchesStatusFilter =
-          statusFilter === "all" ||
-          (statusFilter === "active" &&
-            updatedProfessionalLink.isActive) ||
-          (statusFilter === "inactive" &&
-            !updatedProfessionalLink.isActive);
-
-        const updatedData = current.data.map((item) =>
-          item.id === updatedProfessionalLink.id
-            ? updatedProfessionalLink
-            : item,
-        );
-
-        const data = matchesStatusFilter
-          ? updatedData
-          : updatedData.filter(
-              (item) =>
-                item.id !==
-                updatedProfessionalLink.id,
-            );
-
-        const wasVisible = current.data.some(
-          (item) =>
-            item.id === updatedProfessionalLink.id,
-        );
-
-        const removedFromCurrentFilter =
-          wasVisible && !matchesStatusFilter;
-
-        const total = removedFromCurrentFilter
-          ? Math.max(0, current.meta.total - 1)
-          : current.meta.total;
-
-        const perPage = current.meta.perPage || 20;
-
-        const lastPage = Math.max(
-          1,
-          Math.ceil(total / perPage),
-        );
-
-        return {
-          data,
-          meta: {
-            ...current.meta,
-            total,
-            lastPage,
-            currentPage: Math.min(
-              current.meta.currentPage,
-              lastPage,
-            ),
-          },
-        };
-      });
-
-      setEditingProfessionalId(null);
-
+      setEditingProfessional(null);
+      reloadProfessionals();
       setSuccessMessage(
-        updatedProfessionalLink.isActive
+        body.professionalLink.isActive
           ? "Vínculo profissional ativado."
           : "Vínculo profissional inativado.",
       );
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
+      setErrorMessage("Não foi possível comunicar com o servidor");
     } finally {
       setStatusProfessionalId(null);
     }
@@ -422,6 +172,104 @@ export function ClinicProfessionalsManager({
     appliedSearch.length > 0 ||
     statusFilter !== "all" ||
     appointmentAcceptanceFilter !== "all";
+  const columns: RemoteDataTableColumn<ClinicProfessionalLink>[] = [
+    {
+      id: "professional",
+      header: "Profissional",
+      cell: ({ professional }) => (
+        <div className="min-w-44">
+          <p className="font-medium">{professional.fullName}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            CRM {professional.crmState} {professional.crmNumber}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "specialty",
+      header: "Especialidade",
+      cell: (professionalLink) => (
+        <div className="min-w-36">
+          <p>{professionalLink.professional.specialty}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Código: {professionalLink.localCode ?? "Não informado"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "contact",
+      header: "Contato",
+      cell: (professionalLink) => (
+        <div className="min-w-44 text-sm">
+          <p>{getProfessionalContact(professionalLink) || "Não informado"}</p>
+          <p className="mt-1 break-all text-xs text-muted-foreground">
+            {professionalLink.professional.user?.email ?? "Conta não vinculada"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "service",
+      header: "Atendimento",
+      cell: (professionalLink) => (
+        <div className="min-w-36 text-xs">
+          <p>{professionalLink.defaultAppointmentDurationMinutes} minutos</p>
+          <p className="mt-1">
+            {professionalLink.acceptsAppointments
+              ? "Aceita agendamentos"
+              : "Não aceita agendamentos"}
+          </p>
+        </div>
+      ),
+    },
+    {
+      id: "status",
+      header: "Status",
+      cell: (professionalLink) => (
+        <div className="space-y-1 text-xs">
+          <p>{professionalLink.isActive ? "Vínculo ativo" : "Vínculo inativo"}</p>
+          {!professionalLink.professional.isActive ? (
+            <p className="text-destructive">Cadastro global inativo</p>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      id: "actions",
+      header: "Ações",
+      className: "w-px",
+      cell: (professionalLink) =>
+        canUpdate ? (
+          <div className="flex min-w-40 flex-col gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={statusProfessionalId !== null}
+              onClick={() => {
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                setEditingProfessional(professionalLink);
+              }}
+            >
+              Editar vínculo
+            </Button>
+            <Button
+              type="button"
+              variant={professionalLink.isActive ? "outline" : "default"}
+              disabled={statusProfessionalId !== null || editingProfessional !== null}
+              onClick={() => void handleProfessionalStatusToggle(professionalLink)}
+            >
+              {statusProfessionalId === professionalLink.professional.id
+                ? "Atualizando..."
+                : professionalLink.isActive
+                  ? "Inativar vínculo"
+                  : "Ativar vínculo"}
+            </Button>
+          </div>
+        ) : null,
+    },
+  ];
 
   return (
     <div className="space-y-6">
@@ -433,53 +281,46 @@ export function ClinicProfessionalsManager({
         />
       ) : null}
 
+      {editingProfessional ? (
+        <EditProfessionalLinkCard
+          clinicId={clinicId}
+          professionalLink={editingProfessional}
+          onUpdated={handleProfessionalUpdated}
+          onCancel={() => setEditingProfessional(null)}
+        />
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Pesquisar profissionais</CardTitle>
-
           <CardDescription>
-            Pesquise por nome, CRM, especialidade ou
-            código local.
+            Pesquise por nome, CRM, especialidade ou código local.
           </CardDescription>
         </CardHeader>
-
         <CardContent>
           <form
             className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_190px_220px_auto]"
             onSubmit={handleSearch}
           >
             <div className="space-y-2">
-              <Label htmlFor="professional-search">
-                Pesquisa
-              </Label>
-
+              <Label htmlFor="professional-search">Pesquisa</Label>
               <Input
                 id="professional-search"
                 value={searchInput}
                 maxLength={180}
-                disabled={isLoading}
                 placeholder="Nome, CRM, especialidade ou código"
-                onChange={(event) =>
-                  setSearchInput(event.target.value)
-                }
+                onChange={(event) => setSearchInput(event.target.value)}
               />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="professional-status">
-                Status do vínculo
-              </Label>
-
+              <Label htmlFor="professional-status">Status do vínculo</Label>
               <select
                 id="professional-status"
                 value={statusFilter}
-                disabled={isLoading}
                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onChange={(event) =>
-                  void handleStatusChange(
-                    event.target
-                      .value as ProfessionalStatusFilter,
-                  )
+                  handleStatusChange(event.target.value as ProfessionalStatusFilter)
                 }
               >
                 <option value="all">Todos</option>
@@ -489,51 +330,27 @@ export function ClinicProfessionalsManager({
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="appointment-acceptance">
-                Recebe agendamentos
-              </Label>
-
+              <Label htmlFor="appointment-acceptance">Recebe agendamentos</Label>
               <select
                 id="appointment-acceptance"
                 value={appointmentAcceptanceFilter}
-                disabled={isLoading}
                 className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onChange={(event) =>
-                  void handleAppointmentAcceptanceChange(
-                    event.target
-                      .value as AppointmentAcceptanceFilter,
+                  handleAppointmentAcceptanceChange(
+                    event.target.value as AppointmentAcceptanceFilter,
                   )
                 }
               >
                 <option value="all">Todos</option>
-                <option value="accepts">
-                  Aceita agendamentos
-                </option>
-                <option value="does-not-accept">
-                  Não aceita agendamentos
-                </option>
+                <option value="accepts">Aceita agendamentos</option>
+                <option value="does-not-accept">Não aceita agendamentos</option>
               </select>
             </div>
 
             <div className="flex items-end gap-2">
-              <Button
-                type="submit"
-                disabled={isLoading}
-              >
-                {isLoading
-                  ? "Carregando..."
-                  : "Pesquisar"}
-              </Button>
-
+              <Button type="submit">Pesquisar</Button>
               {hasFilters ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={isLoading}
-                  onClick={() =>
-                    void clearFilters()
-                  }
-                >
+                <Button type="button" variant="outline" onClick={clearFilters}>
                   Limpar
                 </Button>
               ) : null}
@@ -541,315 +358,46 @@ export function ClinicProfessionalsManager({
           </form>
 
           {errorMessage ? (
-            <p
-              className="mt-4 text-sm text-destructive"
-              role="alert"
-            >
+            <p className="mt-4 text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
-
           {successMessage ? (
-            <p
-              className="mt-4 text-sm font-medium text-emerald-700"
-              role="status"
-            >
+            <p className="mt-4 text-sm font-medium text-emerald-700" role="status">
               {successMessage}
             </p>
           ) : null}
         </CardContent>
       </Card>
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-xl font-semibold">
-            Profissionais da clínica
-          </h2>
-
-          <p className="text-sm text-muted-foreground">
-            {professionals.meta.total === 1
-              ? "1 vínculo encontrado"
-              : `${professionals.meta.total} vínculos encontrados`}
-          </p>
-        </div>
-
-        <p className="text-sm text-muted-foreground">
-          Página {professionals.meta.currentPage} de{" "}
-          {Math.max(
-            professionals.meta.lastPage,
-            1,
-          )}
-        </p>
+      <div>
+        <h2 className="text-xl font-semibold">Profissionais da clínica</h2>
+        <RemoteDataTable
+          route={`/api/clinics/${encodeURIComponent(clinicId)}/professionals`}
+          columns={columns}
+          query={{
+            search: appliedSearch || undefined,
+            isActive: statusFilter === "all" ? undefined : statusFilter === "active",
+            acceptsAppointments:
+              appointmentAcceptanceFilter === "all"
+                ? undefined
+                : appointmentAcceptanceFilter === "accepts",
+          }}
+          page={page}
+          refreshKey={refreshKey}
+          getRowId={(professionalLink) => professionalLink.id}
+          onPageChange={setPage}
+          summary={(meta) =>
+            meta.total === 1 ? "1 vínculo encontrado" : `${meta.total} vínculos encontrados`
+          }
+          emptyTitle="Nenhum profissional encontrado"
+          emptyDescription={
+            hasFilters
+              ? "Revise os termos da pesquisa ou limpe os filtros."
+              : "Ainda não existem profissionais vinculados a esta clínica."
+          }
+        />
       </div>
-
-      {professionals.data.length === 0 ? (
-        <Card>
-          <CardContent className="py-10 text-center">
-            <p className="font-medium">
-              Nenhum profissional encontrado
-            </p>
-
-            <p className="mt-1 text-sm text-muted-foreground">
-              {hasFilters
-                ? "Revise os termos da pesquisa ou limpe os filtros."
-                : "Ainda não existem profissionais vinculados a esta clínica."}
-            </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4 xl:grid-cols-2">
-          {professionals.data.map(
-            (professionalLink) => {
-              const { professional } =
-                professionalLink;
-
-              const contact =
-                getProfessionalContact(
-                  professionalLink,
-                );
-
-              if (
-                editingProfessionalId ===
-                professional.id
-              ) {
-                return (
-                  <EditProfessionalLinkCard
-                    key={professionalLink.id}
-                    clinicId={clinicId}
-                    professionalLink={
-                      professionalLink
-                    }
-                    onUpdated={
-                      handleProfessionalUpdated
-                    }
-                    onCancel={() =>
-                      setEditingProfessionalId(
-                        null,
-                      )
-                    }
-                  />
-                );
-              }
-
-              return (
-                <Card key={professionalLink.id}>
-                  <CardHeader className="gap-3">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <CardTitle className="break-words">
-                          {professional.fullName}
-                        </CardTitle>
-
-                        <CardDescription>
-                          CRM {professional.crmState}{" "}
-                          {professional.crmNumber}
-                        </CardDescription>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <span
-                          className={
-                            professionalLink.isActive
-                              ? "w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800"
-                              : "w-fit rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground"
-                          }
-                        >
-                          {professionalLink.isActive
-                            ? "Vínculo ativo"
-                            : "Vínculo inativo"}
-                        </span>
-
-                        <span
-                          className={
-                            professionalLink.acceptsAppointments
-                              ? "w-fit rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800"
-                              : "w-fit rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground"
-                          }
-                        >
-                          {professionalLink.acceptsAppointments
-                            ? "Aceita agendamentos"
-                            : "Não aceita agendamentos"}
-                        </span>
-                      </div>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="space-y-4">
-                    <dl className="grid gap-3 text-sm sm:grid-cols-2">
-                      <div>
-                        <dt className="text-muted-foreground">
-                          Especialidade
-                        </dt>
-
-                        <dd className="font-medium">
-                          {professional.specialty}
-                        </dd>
-                      </div>
-
-                      <div>
-                        <dt className="text-muted-foreground">
-                          Código local
-                        </dt>
-
-                        <dd className="font-medium">
-                          {professionalLink.localCode ??
-                            "Não informado"}
-                        </dd>
-                      </div>
-
-                      <div>
-                        <dt className="text-muted-foreground">
-                          Duração padrão
-                        </dt>
-
-                        <dd className="font-medium">
-                          {
-                            professionalLink.defaultAppointmentDurationMinutes
-                          }{" "}
-                          minutos
-                        </dd>
-                      </div>
-
-                      <div>
-                        <dt className="text-muted-foreground">
-                          Conta de usuário
-                        </dt>
-
-                        <dd className="break-words font-medium">
-                          {professional.user?.email ??
-                            "Não vinculada"}
-                        </dd>
-                      </div>
-                    </dl>
-
-                    {contact ? (
-                      <div className="border-t pt-4 text-sm">
-                        <p className="text-muted-foreground">
-                          Contato
-                        </p>
-
-                        <p className="mt-1 break-words">
-                          {contact}
-                        </p>
-                      </div>
-                    ) : null}
-
-                    {!professional.isActive ? (
-                      <p className="border-t pt-4 text-sm font-medium text-destructive">
-                        O cadastro global deste
-                        profissional está inativo.
-                      </p>
-                    ) : null}
-
-                    {canUpdate ? (
-                      <div className="flex flex-wrap gap-3 border-t pt-4">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          disabled={
-                            statusProfessionalId !==
-                            null
-                          }
-                          onClick={() => {
-                            setErrorMessage(null);
-                            setSuccessMessage(null);
-                            setEditingProfessionalId(
-                              professional.id,
-                            );
-                          }}
-                        >
-                          Editar vínculo
-                        </Button>
-
-                        <Button
-                          type="button"
-                          variant={
-                            professionalLink.isActive
-                              ? "outline"
-                              : "default"
-                          }
-                          disabled={
-                            statusProfessionalId !==
-                              null ||
-                            editingProfessionalId !==
-                              null
-                          }
-                          onClick={() =>
-                            void handleProfessionalStatusToggle(
-                              professionalLink,
-                            )
-                          }
-                        >
-                          {statusProfessionalId ===
-                          professional.id
-                            ? "Atualizando..."
-                            : professionalLink.isActive
-                              ? "Inativar vínculo"
-                              : "Ativar vínculo"}
-                        </Button>
-                      </div>
-                    ) : null}
-                  </CardContent>
-                </Card>
-              );
-            },
-          )}
-        </div>
-      )}
-
-      {professionals.meta.lastPage > 1 ? (
-        <div className="flex items-center justify-center gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={
-              isLoading ||
-              professionals.meta.currentPage <= 1
-            }
-            onClick={() =>
-              void loadProfessionals({
-                page:
-                  professionals.meta.currentPage -
-                  1,
-                search: appliedSearch,
-                status: statusFilter,
-                appointmentAcceptance:
-                  appointmentAcceptanceFilter,
-              })
-            }
-          >
-            Anterior
-          </Button>
-
-          <span className="text-sm text-muted-foreground">
-            {professionals.meta.currentPage} de{" "}
-            {professionals.meta.lastPage}
-          </span>
-
-          <Button
-            type="button"
-            variant="outline"
-            disabled={
-              isLoading ||
-              professionals.meta.currentPage >=
-                professionals.meta.lastPage
-            }
-            onClick={() =>
-              void loadProfessionals({
-                page:
-                  professionals.meta.currentPage +
-                  1,
-                search: appliedSearch,
-                status: statusFilter,
-                appointmentAcceptance:
-                  appointmentAcceptanceFilter,
-              })
-            }
-          >
-            Próxima
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }
