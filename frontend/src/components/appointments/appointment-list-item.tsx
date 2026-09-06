@@ -39,6 +39,8 @@ type AppointmentListItemProps = {
   canChangeStatus: boolean;
   canReschedule: boolean;
   currentTimeIso: string;
+  actionsOnly?: boolean;
+  onChanged?: () => void;
 };
 
 type EditAppointmentFormValues = {
@@ -101,6 +103,8 @@ export function AppointmentListItem({
   canChangeStatus,
   canReschedule,
   currentTimeIso,
+  actionsOnly = false,
+  onChanged,
 }: AppointmentListItemProps) {
   const router = useRouter();
 
@@ -178,6 +182,7 @@ export function AppointmentListItem({
       setSuccessMessage("Agendamento atualizado com sucesso.");
 
       router.refresh();
+      onChanged?.();
     } catch {
       setErrorMessage("Não foi possível comunicar com o servidor");
     }
@@ -187,8 +192,10 @@ export function AppointmentListItem({
     appointment.status === "scheduled" || appointment.status === "confirmed";
 
   return (
-    <article className="rounded-lg border p-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <article className={actionsOnly ? "min-w-56" : "rounded-lg border p-4"}>
+      {!actionsOnly ? (
+        <>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="font-semibold">
             {appointment.patientClinic.patient.fullName}
@@ -207,9 +214,9 @@ export function AppointmentListItem({
         >
           {getAppointmentStatusLabel(appointment.status)}
         </span>
-      </div>
+          </div>
 
-      <dl className="mt-4 grid gap-3 border-t pt-4 text-sm md:grid-cols-3">
+          <dl className="mt-4 grid gap-3 border-t pt-4 text-sm md:grid-cols-3">
         <div>
           <dt className="text-muted-foreground">Profissional</dt>
 
@@ -234,12 +241,14 @@ export function AppointmentListItem({
             {appointment.appointmentTypeCode ?? "Não informado"}
           </dd>
         </div>
-      </dl>
+          </dl>
 
-      {appointment.administrativeNote ? (
-        <p className="mt-4 border-t pt-4 text-sm">
-          {appointment.administrativeNote}
-        </p>
+          {appointment.administrativeNote ? (
+            <p className="mt-4 border-t pt-4 text-sm">
+              {appointment.administrativeNote}
+            </p>
+          ) : null}
+        </>
       ) : null}
 
       {successMessage ? (
@@ -396,6 +405,7 @@ export function AppointmentListItem({
               setAppointment(updatedAppointment);
               reset(appointmentToForm(updatedAppointment));
               setSuccessMessage(null);
+              onChanged?.();
             }}
           />
         </>
