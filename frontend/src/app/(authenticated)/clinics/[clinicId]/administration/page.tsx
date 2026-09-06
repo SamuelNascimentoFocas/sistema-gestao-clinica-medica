@@ -1,8 +1,6 @@
-import { notFound } from "next/navigation";
 import { ClinicMembersManager } from "@/components/administration/clinic-members-manager";
 import { hasAnyPermission } from "@/lib/auth/permissions";
 import { requireClinicPermissions } from "@/lib/server/clinic-authorization";
-import { getClinicMembers } from "@/lib/server/clinic-members";
 
 type PageProps = {
   params: Promise<{
@@ -24,12 +22,6 @@ export default async function AdministrationPage({
     ["users.read"],
   );
 
-  const members = await getClinicMembers(clinicId);
-
-  if (!members) {
-    notFound();
-  }
-
   const permissions = context.access.permissions;
 
   const canCreate =
@@ -39,7 +31,6 @@ export default async function AdministrationPage({
   return (
     <ClinicMembersManager
       clinicId={clinicId}
-      initialMembers={members}
       currentMembershipId={
         context.access.membershipId
       }

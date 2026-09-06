@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/types/auth";
+import type { PaginationMeta } from "@/types/pagination";
 
 export const CLINIC_MEMBER_ROLES = [
   {
@@ -43,6 +44,7 @@ export type ClinicMember = {
 
 export type ClinicMembersResponse = {
   data: ClinicMember[];
+  meta: PaginationMeta;
 };
 
 export type ClinicMemberResponse = {

@@ -12,14 +12,89 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export async function GET(
-  _request: Request,
-  context: RouteContext,
-) {
+function parsePositiveInteger(value: string | null, maximum?: number) {
+  if (value === null) {
+    return null;
+  }
+
+  if (!/^[0-9]+$/.test(value)) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+
+  if (
+    !Number.isSafeInteger(parsed) ||
+    parsed < 1 ||
+    (maximum !== undefined && parsed > maximum)
+  ) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+export async function GET(request: Request, context: RouteContext) {
   const { clinicId } = await context.params;
+  const requestUrl = new URL(request.url);
+  const backendQuery = new URLSearchParams();
+
+  const page = parsePositiveInteger(requestUrl.searchParams.get("page"));
+  const perPage = parsePositiveInteger(
+    requestUrl.searchParams.get("perPage"),
+    100,
+  );
+
+  if (page === undefined || perPage === undefined) {
+    return Response.json(
+      { message: "Paginação inválida" },
+      { status: 400 },
+    );
+  }
+
+  backendQuery.set("page", String(page ?? 1));
+  backendQuery.set("perPage", String(perPage ?? 20));
+
+  const search = requestUrl.searchParams.get("search")?.trim() ?? "";
+
+  if (search) {
+    if (search.length > 180) {
+      return Response.json(
+        { message: "A pesquisa ultrapassa o limite permitido" },
+        { status: 422 },
+      );
+    }
+
+    backendQuery.set("search", search);
+  }
+
+  const roleCode = requestUrl.searchParams.get("roleCode");
+
+  if (roleCode !== null) {
+    if (!isClinicMemberRoleCode(roleCode)) {
+      return Response.json({ message: "Perfil inválido" }, { status: 422 });
+    }
+
+    backendQuery.set("roleCode", roleCode);
+  }
+
+  const isActive = requestUrl.searchParams.get("isActive");
+
+  if (isActive !== null) {
+    if (!['true', 'false'].includes(isActive)) {
+      return Response.json(
+        { message: "Filtro de status inválido" },
+        { status: 422 },
+      );
+    }
+
+    backendQuery.set("isActive", isActive);
+  }
 
   return authenticatedBackendJson(
-    `/api/v1/clinics/${encodeURIComponent(clinicId)}/members`,
+    `/api/v1/clinics/${encodeURIComponent(
+      clinicId,
+    )}/members?${backendQuery.toString()}`,
   );
 }
 
