@@ -30,11 +30,9 @@ import {
   type WeeklyAvailabilityResponse,
   type ScheduleBlockResponse,
 } from "@/types/schedule";
-import { CreateWeeklyAvailabilityCard } from "@/components/schedules/create-weekly-availability-card";
 import { Button } from "@/components/ui/button";
-import { EditWeeklyAvailabilityCard } from "@/components/schedules/edit-weekly-availability-card";
-import { CreateScheduleBlockCard } from "@/components/schedules/create-schedule-block-card";
-import { EditScheduleBlockCard } from "@/components/schedules/edit-schedule-block-card";
+import { ScheduleBlockFormDialog } from "@/components/schedules/schedule-block-form-dialog";
+import { WeeklyAvailabilityFormDialog } from "@/components/schedules/weekly-availability-form-dialog";
 
 type ClinicSchedulesManagerProps = {
   clinicId: string;
@@ -674,26 +672,26 @@ export function ClinicSchedulesManager({
           </Card>
 
           {canManageSelectedSchedule ? (
-            <CreateWeeklyAvailabilityCard
+            <WeeklyAvailabilityFormDialog
               key={schedule.professional.id}
               clinicId={clinicId}
               professionalId={
                 schedule.professional.id
               }
-              onCreated={
+              onSuccess={
                 handleAvailabilityCreated
               }
             />
           ) : null}
 
           {canManageSelectedSchedule ? (
-            <CreateScheduleBlockCard
+            <ScheduleBlockFormDialog
               key={`block-${schedule.professional.id}`}
               clinicId={clinicId}
               professionalId={
                 schedule.professional.id
               }
-              onCreated={
+              onSuccess={
                 handleScheduleBlockCreated
               }
             />
@@ -729,32 +727,6 @@ export function ClinicSchedulesManager({
                   <div className="space-y-3">
                     {schedule.weeklyAvailabilities.map(
                       (availability) => {
-                        if (
-                          editingAvailabilityId ===
-                          availability.id
-                        ) {
-                          return (
-                            <EditWeeklyAvailabilityCard
-                              key={availability.id}
-                              clinicId={clinicId}
-                              professionalId={
-                                schedule.professional.id
-                              }
-                              availability={
-                                availability
-                              }
-                              onUpdated={
-                                handleAvailabilityUpdated
-                              }
-                              onCancel={() =>
-                                setEditingAvailabilityId(
-                                  null,
-                                )
-                              }
-                            />
-                          );
-                        }
-
                         return (
                           <div
                             key={availability.id}
@@ -794,23 +766,40 @@ export function ClinicSchedulesManager({
 
                             {canManageSelectedSchedule ? (
                               <div className="flex flex-wrap gap-3 border-t pt-3">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={
+                                <WeeklyAvailabilityFormDialog
+                                  clinicId={clinicId}
+                                  professionalId={
+                                    schedule.professional.id
+                                  }
+                                  availability={
+                                    availability
+                                  }
+                                  open={
+                                    editingAvailabilityId ===
+                                    availability.id
+                                  }
+                                  onOpenChange={(
+                                    isOpen,
+                                  ) => {
+                                    setEditingAvailabilityId(
+                                      isOpen
+                                        ? availability.id
+                                        : null,
+                                    );
+
+                                    if (isOpen) {
+                                      setErrorMessage(null);
+                                      setSuccessMessage(null);
+                                    }
+                                  }}
+                                  onSuccess={
+                                    handleAvailabilityUpdated
+                                  }
+                                  triggerDisabled={
                                     statusAvailabilityId !==
                                     null
                                   }
-                                  onClick={() => {
-                                    setErrorMessage(null);
-                                    setSuccessMessage(null);
-                                    setEditingAvailabilityId(
-                                      availability.id,
-                                    );
-                                  }}
-                                >
-                                  Editar horário
-                                </Button>
+                                />
 
                                 <Button
                                   type="button"
@@ -878,32 +867,6 @@ export function ClinicSchedulesManager({
                   <div className="space-y-3">
                     {schedule.scheduleBlocks.map(
                       (scheduleBlock) => {
-                        if (
-                          editingScheduleBlockId ===
-                          scheduleBlock.id
-                        ) {
-                          return (
-                            <EditScheduleBlockCard
-                              key={scheduleBlock.id}
-                              clinicId={clinicId}
-                              professionalId={
-                                schedule.professional.id
-                              }
-                              scheduleBlock={
-                                scheduleBlock
-                              }
-                              onUpdated={
-                                handleScheduleBlockUpdated
-                              }
-                              onCancel={() =>
-                                setEditingScheduleBlockId(
-                                  null,
-                                )
-                              }
-                            />
-                          );
-                        }
-
                         return (
                           <div
                             key={scheduleBlock.id}
@@ -948,23 +911,40 @@ export function ClinicSchedulesManager({
 
                             {canManageSelectedSchedule ? (
                               <div className="flex flex-wrap gap-3 border-t pt-3">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={
+                                <ScheduleBlockFormDialog
+                                  clinicId={clinicId}
+                                  professionalId={
+                                    schedule.professional.id
+                                  }
+                                  scheduleBlock={
+                                    scheduleBlock
+                                  }
+                                  open={
+                                    editingScheduleBlockId ===
+                                    scheduleBlock.id
+                                  }
+                                  onOpenChange={(
+                                    isOpen,
+                                  ) => {
+                                    setEditingScheduleBlockId(
+                                      isOpen
+                                        ? scheduleBlock.id
+                                        : null,
+                                    );
+
+                                    if (isOpen) {
+                                      setErrorMessage(null);
+                                      setSuccessMessage(null);
+                                    }
+                                  }}
+                                  onSuccess={
+                                    handleScheduleBlockUpdated
+                                  }
+                                  triggerDisabled={
                                     statusScheduleBlockId !==
                                     null
                                   }
-                                  onClick={() => {
-                                    setErrorMessage(null);
-                                    setSuccessMessage(null);
-                                    setEditingScheduleBlockId(
-                                      scheduleBlock.id,
-                                    );
-                                  }}
-                                >
-                                  Editar bloqueio
-                                </Button>
+                                />
 
                                 <Button
                                   type="button"
