@@ -1,3 +1,5 @@
+import type { PaginationMeta } from "@/types/pagination";
+
 export type MedicalRecordSummary = {
   id: string;
   patientId: string;
@@ -34,18 +36,6 @@ export type PatientClinicLink = {
   createdAt: string;
   updatedAt: string;
   patient: Patient;
-};
-
-export type PaginationMeta = {
-  total: number;
-  perPage: number;
-  currentPage: number;
-  lastPage: number;
-  firstPage: number;
-  firstPageUrl: string | null;
-  lastPageUrl: string | null;
-  nextPageUrl: string | null;
-  previousPageUrl: string | null;
 };
 
 export type PatientLinksResponse = {
