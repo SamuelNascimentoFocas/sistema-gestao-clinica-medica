@@ -481,6 +481,38 @@ A Fase 10 não alterou backend, contratos HTTP, BFF Route Handlers, schemas Zod,
 dependências, DataTables route-first, autenticação ou regras de permissão. O fluxo
 continua navegador → BFF Next.js → backend AdonisJS.
 
+### Sidebar e troca de clínica — Fase 11
+
+`/clinics` permanece como a seleção inicial. Quando há uma única clínica acessível,
+o redirecionamento existente leva a `/clinics/:clinicId/dashboard`; com múltiplas
+clínicas, a página apresenta as opções disponíveis. Dentro de
+`/clinics/[clinicId]/*`, o `pathname` é a fonte de verdade da clínica atual.
+
+O layout server-side valida primeiro a clínica corrente com
+`getClinicContext(clinicId)`. Um contexto inválido mantém o comportamento seguro de
+`notFound()`. Depois da validação, `getAccessibleClinics()` carrega no servidor a
+lista apresentada pelo `ClinicSwitcher`, que a recebe por props e é renderizado pelo
+slot do `ClinicAppShell`.
+
+O switcher não faz HTTP, não acessa token ou cookie e não persiste a clínica no
+navegador. Não existe cookie de clínica, `localStorage`, React Context global ou query
+param para essa seleção. A troca sempre navega para
+`/clinics/:newClinicId/dashboard`, sem preservar automaticamente o módulo anterior,
+pois a clínica de destino pode possuir permissões diferentes. O novo render
+server-side executa `getClinicContext(newClinicId)` e o backend revalida o acesso; a
+seleção na interface não concede autorização.
+
+O shell clínico usa uma arquitetura adaptada ao padrão de sidebar recomendado pela
+revisão, com primitives locais compatíveis com shadcn/base-nova:
+`SidebarProvider`, `Sidebar`, `SidebarInset` e `Sheet` no comportamento mobile. A
+navegação é organizada em Visão geral, Atendimento e Gestão, e seus oito itens
+continuam filtrados pelas permissões existentes. O Administrador Global preserva o
+wildcard `*`, e Administração preserva sua regra OR anterior.
+
+Não foram introduzidos nova API/BFF, novas rotas, dependências, breadcrumbs, avatar,
+grupos internos recolhíveis ou persistência da última clínica. O frontend controla
+somente navegação e visibilidade; o backend permanece a autoridade de autorização.
+
 ### Proteção de interface
 
 A interface:

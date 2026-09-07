@@ -228,6 +228,28 @@ Verificar:
 - [ ] O contexto selecionado é respeitado.
 - [ ] Dados administrativos locais não se misturam indevidamente.
 
+### Navegação clínica e Sidebar — Fase 11
+
+- [ ] `/clinics` permanece como seleção inicial; uma única clínica redireciona para
+  seu dashboard e múltiplas clínicas permanecem disponíveis para escolha.
+- [ ] Dentro de `/clinics/[clinicId]/*`, o `pathname` determina a clínica atual.
+- [ ] O layout valida a clínica atual com `getClinicContext(clinicId)` antes de
+  carregar server-side as opções com `getAccessibleClinics()`.
+- [ ] Contexto inválido mantém `notFound()` e o backend continua sendo a autoridade
+  de autorização.
+- [ ] O `ClinicSwitcher` recebe clínicas por props, não faz HTTP e não acessa token,
+  cookie ou armazenamento local.
+- [ ] A troca navega sempre para `/clinics/:newClinicId/dashboard`, sem preservar o
+  módulo anterior, e o novo contexto é revalidado no servidor.
+- [ ] A Sidebar usa os grupos Visão geral, Atendimento e Gestão e filtra seus oito
+  itens pelas permissões existentes.
+- [ ] O wildcard `*` do Administrador Global e a regra OR de Administração são
+  preservados.
+- [ ] Desktop usa `SidebarProvider`, `Sidebar` e `SidebarInset`; mobile usa o `Sheet`
+  da infraestrutura local compatível com shadcn/base-nova.
+- [ ] Não existe cookie, `localStorage`, React Context global ou query param de
+  clínica.
+
 ## 10. Administração de membros
 
 Com administrador de consultório:
@@ -461,6 +483,10 @@ Critérios:
 Evidência da Fase 9: membros direcionados `4/4`, contratos aprovados, backend
 funcional `98/98`, frontend `24/24`, typecheck, lint, build e `git diff --check`
 aprovados.
+
+Evidência da Fase 11: auditoria funcional da Sidebar e do `ClinicSwitcher`, frontend
+`24/24`, typecheck, lint, build e `git diff --check` aprovados, sem alteração de
+backend, BFF, contratos HTTP, autenticação, rotas ou dependências.
 
 ## 20. Validação do Git
 
