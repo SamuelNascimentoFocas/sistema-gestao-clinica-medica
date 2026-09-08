@@ -4,6 +4,7 @@ import {
   backendApiFetch,
   readBackendResponse,
 } from "@/lib/server/backend-api";
+import { logServerError } from "@/lib/server/server-logging";
 
 function parseAuthenticatedUser(body: unknown): AuthUser | null {
   if (typeof body !== "object" || body === null) {
@@ -60,7 +61,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
     return user;
   } catch (error) {
-    console.error("Falha ao validar a sessão do usuário", error);
+    logServerError("auth.current_user_validation_failed", error);
 
     return null;
   }

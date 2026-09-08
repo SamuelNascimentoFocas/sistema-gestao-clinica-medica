@@ -8,6 +8,7 @@ import {
   getBackendError,
   readBackendResponse,
 } from "@/lib/server/backend-api";
+import { logServerError } from "@/lib/server/server-logging";
 
 export async function GET() {
   const token = await getSessionToken();
@@ -55,7 +56,7 @@ export async function GET() {
 
     return NextResponse.json(backendBody);
   } catch (error) {
-    console.error("Falha ao carregar as clínicas acessíveis", error);
+    logServerError("clinics.accessible_list_request_failed", error);
 
     return NextResponse.json(
       {

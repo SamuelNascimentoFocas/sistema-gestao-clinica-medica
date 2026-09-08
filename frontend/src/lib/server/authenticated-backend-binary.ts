@@ -5,6 +5,7 @@ import {
   backendApiFetch,
   readBackendResponse,
 } from "@/lib/server/backend-api";
+import { logServerError } from "@/lib/server/server-logging";
 
 const FORWARDED_RESPONSE_HEADERS = [
   "Content-Type",
@@ -92,10 +93,7 @@ export async function authenticatedBackendBinary(
       headers: responseHeaders,
     });
   } catch (error) {
-    console.error(
-      "Falha no download pelo backend",
-      error,
-    );
+    logServerError("bff.backend_binary_request_failed", error);
 
     return Response.json(
       {
