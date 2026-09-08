@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import { readMedicalRecordAttachmentsValidator } from '#validators/medical_record_attachment'
 import { downloadAttachment } from '#services/medical_record_attachment_service'
+import { resolveAttachmentDownloadContentType } from '#services/attachment_storage_service'
 import { respondToDomainError } from '#controllers/helpers/domain_error_response'
 
 function buildContentDisposition(originalName: string) {
@@ -46,7 +47,7 @@ export default class MedicalRecordAttachmentDownloadsController {
       )
 
       response.header('Cache-Control', 'private, no-store')
-      response.header('Content-Type', attachment.contentType)
+      response.header('Content-Type', resolveAttachmentDownloadContentType(attachment.contentType))
       response.header('Content-Length', fileContents.byteLength)
       response.header('X-Content-Type-Options', 'nosniff')
       response.header('Content-Disposition', buildContentDisposition(attachment.originalName))

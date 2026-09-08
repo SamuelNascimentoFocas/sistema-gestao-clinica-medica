@@ -1,4 +1,5 @@
 import vine from '@vinejs/vine'
+import attachmentConfig from '#config/attachments'
 
 export const readMedicalRecordAttachmentsValidator = vine.compile(
   vine.object({
@@ -17,8 +18,7 @@ export const uploadMedicalRecordAttachmentsValidator = vine.compile(
     files: vine
       .array(
         vine.file({
-          size: '10mb',
-          extnames: ['pdf', 'jpg', 'jpeg', 'png'],
+          size: attachmentConfig.maxBytes,
         })
       )
       .minLength(1)

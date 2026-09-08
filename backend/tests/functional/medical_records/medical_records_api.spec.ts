@@ -30,6 +30,7 @@ import MedicalRecordAttachment from '#models/medical_record_attachment'
 import ClinicProfessional from '#models/clinic_professional'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
+import attachmentConfig from '#config/attachments'
 
 const privateAttachmentStorageRoot = app.makePath('storage/private')
 
@@ -41,6 +42,8 @@ const validPngBuffer = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64'
 )
+
+const validJpegBuffer = Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD/2Q==', 'base64')
 
 function getStoredAttachmentPath(storageKey: string) {
   return join(privateAttachmentStorageRoot, storageKey)
@@ -78,13 +81,12 @@ async function createStoredAttachment({
   uploader: User
   originalName?: string
   content?: Buffer
-  contentType?: 'application/pdf' | 'image/jpeg' | 'image/png'
+  contentType?: string
   status?: 'pending' | 'available' | 'rejected'
   statusReason?: string | null
   persistFile?: boolean
 }) {
-  const extension =
-    contentType === 'application/pdf' ? 'pdf' : contentType === 'image/jpeg' ? 'jpg' : 'png'
+  const extension = originalName.includes('.') ? originalName.split('.').pop() : 'bin'
 
   const storageKey =
     `medical-records/${medicalRecord.id}/entries/${entry.id}/` + `${randomUUID()}.${extension}`
@@ -1221,7 +1223,7 @@ test.group('Medical records API', (group) => {
     assert.equal(persistedOriginal.content, 'Entrada sujeita a correções concorrentes.')
   })
 
-  test('uploads two private attachments and persists trusted metadata', async ({
+  test('uploads two private attachments and persists opaque metadata', async ({
     client,
     assert,
   }) => {
@@ -1322,12 +1324,20 @@ test.group('Medical records API', (group) => {
       )
     )
 
-    assert.isTrue(pdfAttachment!.storageKey.endsWith('.pdf'))
+    const pdfStorageName = pdfAttachment!.storageKey.split('/').at(-1)
+
+    assert.match(
+      pdfStorageName!,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+    )
+    assert.notInclude(pdfAttachment!.storageKey, pdfAttachment!.originalName)
+    assert.isFalse(pdfAttachment!.storageKey.endsWith('.pdf'))
 
     assert.equal(pdfAttachment!.sha256, createHash('sha256').update(validPdfBuffer).digest('hex'))
 
     assert.equal(imageAttachment!.contentType, 'image/png')
     assert.equal(imageAttachment!.sizeInBytes, validPngBuffer.length)
+    assert.isFalse(imageAttachment!.storageKey.endsWith('.png'))
 
     assert.equal(imageAttachment!.sha256, createHash('sha256').update(validPngBuffer).digest('hex'))
 
@@ -1341,6 +1351,105 @@ test.group('Medical records API', (group) => {
     for (const responseAttachment of response.body().attachments) {
       assert.notProperty(responseAttachment, 'url')
       assert.notProperty(responseAttachment, 'publicUrl')
+    }
+  })
+
+  test('accepts arbitrary and extensionless private attachments', async ({ client, assert }) => {
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Anexos Opacos',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário de Anexos Opacos',
+      email: 'attachments.opaque.doctor@example.com',
+    }).create()
+
+    await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Anexos Opacos')
+    const patientLink = await createPatientLink({ patient, clinic })
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dra. Anexos Opacos',
+      crmNumber: '98310',
+    })
+    const entry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      content: 'Entrada para tipos arbitrários de anexos.',
+    })
+    const token = await createToken(doctor)
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+      `/medical-record/entries/${entry.id}/attachments`
+
+    const textContents = Buffer.from('conteúdo textual tratado como opaco')
+    const textResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', validJpegBuffer, {
+        filename: 'imagem-clinica.jpeg',
+        contentType: 'image/jpeg',
+      })
+      .file('files[]', textContents, {
+        filename: 'observacoes.txt',
+        contentType: 'text/plain',
+      })
+
+    textResponse.assertStatus(201)
+
+    const extensionlessContents = Buffer.from('arquivo sem extensão')
+    const extensionlessResponse = await client
+      .post(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .file('files[]', extensionlessContents, {
+        filename: 'dados-clinicos',
+        contentType: 'application/octet-stream',
+      })
+
+    extensionlessResponse.assertStatus(201)
+
+    const attachments = await MedicalRecordAttachment.query()
+      .where('medical_record_entry_id', entry.id)
+      .orderBy('original_name', 'asc')
+
+    assert.lengthOf(attachments, 3)
+
+    const extensionlessAttachment = attachments.find(
+      (attachment) => attachment.originalName === 'dados-clinicos'
+    )
+    const jpegAttachment = attachments.find(
+      (attachment) => attachment.originalName === 'imagem-clinica.jpeg'
+    )
+    const textAttachment = attachments.find(
+      (attachment) => attachment.originalName === 'observacoes.txt'
+    )
+
+    assert.exists(extensionlessAttachment)
+    assert.exists(jpegAttachment)
+    assert.exists(textAttachment)
+    assert.equal(jpegAttachment!.contentType, 'image/jpeg')
+    assert.equal(textAttachment!.contentType, 'text/plain')
+    assert.equal(extensionlessAttachment!.contentType, 'application/octet-stream')
+    assert.equal(textAttachment!.sizeInBytes, textContents.length)
+    assert.equal(textAttachment!.sha256, createHash('sha256').update(textContents).digest('hex'))
+
+    for (const attachment of attachments) {
+      const storageName = attachment.storageKey.split('/').at(-1)
+
+      assert.match(
+        storageName!,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+      )
+      assert.notInclude(attachment.storageKey, attachment.originalName)
+      assert.isFalse(storageName!.includes('.'))
     }
   })
 
@@ -1561,7 +1670,7 @@ test.group('Medical records API', (group) => {
     assert.lengthOf(storedItems, 0)
   })
 
-  test('validates attachment quantity, extension, real type and size', async ({
+  test('validates attachment quantity, non-empty contents and configured size', async ({
     client,
     assert,
   }) => {
@@ -1636,31 +1745,20 @@ test.group('Medical records API', (group) => {
 
     tooManyFilesResponse.assertStatus(422)
 
-    const invalidExtensionResponse = await client
+    const emptyFileResponse = await client
       .post(route)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
-      .file('files[]', Buffer.from('arquivo de texto'), {
-        filename: 'observacoes.txt',
-        contentType: 'text/plain',
+      .file('files[]', Buffer.alloc(0), {
+        filename: 'vazio',
+        contentType: 'application/octet-stream',
       })
 
-    invalidExtensionResponse.assertStatus(422)
-
-    const disguisedFileResponse = await client
-      .post(route)
-      .header('Accept', 'application/json')
-      .header('Authorization', `Bearer ${token}`)
-      .file('files[]', Buffer.from('este conteúdo não é um PDF'), {
-        filename: 'arquivo-falso.pdf',
-        contentType: 'application/pdf',
-      })
-
-    disguisedFileResponse.assertStatus(422)
+    emptyFileResponse.assertStatus(422)
 
     const oversizedPdfBuffer = Buffer.concat([
       Buffer.from('%PDF-1.4\n'),
-      Buffer.alloc(10 * 1024 * 1024),
+      Buffer.alloc(attachmentConfig.maxBytes),
     ])
 
     const oversizedFileResponse = await client
@@ -1891,6 +1989,8 @@ test.group('Medical records API', (group) => {
       contentType: 'image/png',
     })
 
+    assert.isTrue(attachment.storageKey.endsWith('.png'))
+
     const token = await createToken(doctor)
     const purposeNote = 'Revisão do exame durante atendimento clínico'
 
@@ -1930,6 +2030,76 @@ test.group('Medical records API', (group) => {
     assert.equal(logs[0].purposeCode, 'other')
     assert.equal(logs[0].purposeNote, purposeNote)
     assert.equal(logs[0].medicalRecordAttachmentId, attachment.id)
+  })
+
+  test('downloads active arbitrary types as opaque attachments and audits access', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Download Opaco',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário de Download Opaco',
+      email: 'attachments.opaque.download@example.com',
+    }).create()
+
+    await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+
+    const { patient, medicalRecord } = await createPatient('Paciente de Download Opaco')
+    const patientLink = await createPatientLink({ patient, clinic })
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dra. Download Opaco',
+      crmNumber: '98403',
+    })
+    const entry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      content: 'Entrada destinada ao download de conteúdo ativo.',
+    })
+    const activeContents = Buffer.from('<script>window.alert("unsafe")</script>')
+    const attachment = await createStoredAttachment({
+      entry,
+      medicalRecord,
+      patient,
+      clinic,
+      uploader: doctor,
+      originalName: 'relatorio.html',
+      content: activeContents,
+      contentType: 'text/html',
+    })
+    const token = await createToken(doctor)
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+      `/medical-record/entries/${entry.id}` +
+      `/attachments/${attachment.id}/download?purposeCode=patient_care`
+
+    const response = await client.get(route).header('Authorization', `Bearer ${token}`)
+
+    response.assertStatus(200)
+    assert.equal(response.header('content-type'), 'application/octet-stream')
+    assert.equal(
+      response.header('content-disposition'),
+      `attachment; filename="relatorio.html"; filename*=UTF-8''relatorio.html`
+    )
+    assert.equal(response.header('x-content-type-options'), 'nosniff')
+    assert.equal(response.header('cache-control'), 'private, no-store')
+    assert.deepEqual(response.body(), activeContents)
+
+    const logs = await MedicalRecordAccessLog.query()
+      .where('medical_record_attachment_id', attachment.id)
+      .where('access_action', 'download_attachment')
+
+    assert.lengthOf(logs, 1)
+    assert.equal(logs[0].userId, doctor.id)
+    assert.equal(logs[0].clinicId, clinic.id)
   })
 
   test('rejects invalid purpose and attachments that are not physically available', async ({

@@ -3,9 +3,16 @@ import { createReadStream } from 'node:fs'
 import type { MultipartFile } from '@adonisjs/core/bodyparser'
 import drive from '@adonisjs/drive/services/main'
 import DomainError from '#exceptions/domain_error'
+import attachmentConfig from '#config/attachments'
 
 export const ATTACHMENT_STORAGE_DISK = 'private_fs' as const
-const ALLOWED_ATTACHMENT_CONTENT_TYPES = new Set(['application/pdf', 'image/jpeg', 'image/png'])
+export const OPAQUE_ATTACHMENT_CONTENT_TYPE = 'application/octet-stream' as const
+const SAFE_ATTACHMENT_DOWNLOAD_CONTENT_TYPES = new Set([
+  'application/pdf',
+  'image/jpeg',
+  'image/png',
+])
+const CONTENT_TYPE_PATTERN = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i
 
 function normalizeOriginalName(clientName: string) {
   const normalizedPath = clientName.replaceAll('\\', '/')
@@ -31,11 +38,19 @@ function resolveContentType(file: MultipartFile) {
 
   const contentType = type?.includes('/') ? type : type && subtype ? `${type}/${subtype}` : null
 
-  if (!contentType || !ALLOWED_ATTACHMENT_CONTENT_TYPES.has(contentType)) {
-    throw new DomainError('invalid', 'O tipo real do arquivo não é permitido')
+  if (!contentType || contentType.length > 255 || !CONTENT_TYPE_PATTERN.test(contentType)) {
+    return OPAQUE_ATTACHMENT_CONTENT_TYPE
   }
 
   return contentType
+}
+
+export function resolveAttachmentDownloadContentType(contentType: string) {
+  const normalizedContentType = contentType.trim().toLowerCase()
+
+  return SAFE_ATTACHMENT_DOWNLOAD_CONTENT_TYPES.has(normalizedContentType)
+    ? normalizedContentType
+    : OPAQUE_ATTACHMENT_CONTENT_TYPE
 }
 
 async function calculateSha256(tmpPath: string) {
@@ -66,18 +81,19 @@ export async function prepareAttachmentFiles(
         throw new DomainError('invalid', 'O arquivo não foi processado corretamente')
       }
 
-      const extension = file.extname?.toLowerCase()
+      if (file.size < 1) {
+        throw new DomainError('invalid', 'O arquivo não pode estar vazio')
+      }
 
-      if (!extension) {
-        throw new DomainError('invalid', 'Não foi possível identificar a extensão do arquivo')
+      if (file.size > attachmentConfig.maxBytes) {
+        throw new DomainError('invalid', 'O arquivo ultrapassa o limite configurado')
       }
 
       const originalName = normalizeOriginalName(file.clientName)
       const contentType = resolveContentType(file)
       const sha256 = await calculateSha256(file.tmpPath)
 
-      const storageKey =
-        `medical-records/${medicalRecordId}/entries/${entryId}/` + `${randomUUID()}.${extension}`
+      const storageKey = `medical-records/${medicalRecordId}/entries/${entryId}/${randomUUID()}`
 
       return {
         file,

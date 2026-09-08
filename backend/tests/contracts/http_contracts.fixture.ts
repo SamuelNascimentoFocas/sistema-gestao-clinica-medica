@@ -298,7 +298,7 @@ const contractsFixture = {
     'root POST /api/v1/clinics/:clinicId/members:body':
       'eece6fa9274642044b7f94fc4fece9667e256318513ffa1c89403171bbcdd8a8',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments:body':
-      'de8f10ce5c9efb02f029b2f2348c052536fa5bd97bb0b4dfa44ddb003641ae14',
+      '06f3de8980d9ca3e6297d3f3b953771119046b6f143229e2395baefbb7ce93a3',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/corrections:body':
       'ffcc3a7e04597dcb813cba7af541ee694153a5b75809a7bd7b7c225cc0ebcd95',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries:body':
