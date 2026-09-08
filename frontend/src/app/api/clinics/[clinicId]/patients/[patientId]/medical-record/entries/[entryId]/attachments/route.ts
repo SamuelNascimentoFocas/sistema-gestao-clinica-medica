@@ -1,5 +1,6 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
 import { validateAttachmentSelection } from "@/lib/medical-records/attachment-files";
+import { sanitizeMedicalRecordBackendResponse } from "@/lib/medical-records/medical-record-response";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
 
 type RouteContext = {
@@ -126,17 +127,19 @@ export async function POST(
   const { clinicId, patientId, entryId } =
     await context.params;
 
-  return authenticatedBackendJson(
-    `/api/v1/clinics/${encodeURIComponent(
-      clinicId,
-    )}/patients/${encodeURIComponent(
-      patientId,
-    )}/medical-record/entries/${encodeURIComponent(
-      entryId,
-    )}/attachments`,
-    {
-      method: "POST",
-      body: backendFormData,
-    },
+  return sanitizeMedicalRecordBackendResponse(
+    await authenticatedBackendJson(
+      `/api/v1/clinics/${encodeURIComponent(
+        clinicId,
+      )}/patients/${encodeURIComponent(
+        patientId,
+      )}/medical-record/entries/${encodeURIComponent(
+        entryId,
+      )}/attachments`,
+      {
+        method: "POST",
+        body: backendFormData,
+      },
+    ),
   );
 }

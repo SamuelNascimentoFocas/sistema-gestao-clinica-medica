@@ -1,4 +1,5 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
+import { sanitizeMedicalRecordBackendResponse } from "@/lib/medical-records/medical-record-response";
 import { parseMedicalRecordAccessPayload } from "@/lib/server/medical-record-payload";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
 
@@ -61,11 +62,13 @@ export async function POST(
     backendQuery.set("purposeNote", purposeNote);
   }
 
-  return authenticatedBackendJson(
-    `/api/v1/clinics/${encodeURIComponent(
-      clinicId,
-    )}/patients/${encodeURIComponent(
-      patientId,
-    )}/medical-record?${backendQuery.toString()}`,
+  return sanitizeMedicalRecordBackendResponse(
+    await authenticatedBackendJson(
+      `/api/v1/clinics/${encodeURIComponent(
+        clinicId,
+      )}/patients/${encodeURIComponent(
+        patientId,
+      )}/medical-record?${backendQuery.toString()}`,
+    ),
   );
 }

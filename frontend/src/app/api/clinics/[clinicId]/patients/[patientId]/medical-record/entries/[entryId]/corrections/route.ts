@@ -1,4 +1,5 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
+import { sanitizeMedicalRecordBackendResponse } from "@/lib/medical-records/medical-record-response";
 import { parseCorrectMedicalRecordEntryPayload } from "@/lib/server/medical-record-payload";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
 
@@ -44,17 +45,19 @@ export async function POST(
   const { clinicId, patientId, entryId } =
     await context.params;
 
-  return authenticatedBackendJson(
-    `/api/v1/clinics/${encodeURIComponent(
-      clinicId,
-    )}/patients/${encodeURIComponent(
-      patientId,
-    )}/medical-record/entries/${encodeURIComponent(
-      entryId,
-    )}/corrections`,
-    {
-      method: "POST",
-      body: JSON.stringify(parsedPayload.value),
-    },
+  return sanitizeMedicalRecordBackendResponse(
+    await authenticatedBackendJson(
+      `/api/v1/clinics/${encodeURIComponent(
+        clinicId,
+      )}/patients/${encodeURIComponent(
+        patientId,
+      )}/medical-record/entries/${encodeURIComponent(
+        entryId,
+      )}/corrections`,
+      {
+        method: "POST",
+        body: JSON.stringify(parsedPayload.value),
+      },
+    ),
   );
 }
