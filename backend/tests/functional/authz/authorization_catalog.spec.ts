@@ -55,6 +55,7 @@ test.group('Authorization catalog', (group) => {
     assert.notInclude(receptionistPermissions, 'appointments.create_own')
     assert.notInclude(receptionistPermissions, 'appointments.update_own')
     assert.notInclude(receptionistPermissions, 'medical_records.read')
+    assert.notInclude(receptionistPermissions, 'medical_records.access_all')
     assert.notInclude(receptionistPermissions, 'schedules.manage')
     assert.notInclude(receptionistPermissions, 'schedules.manage_own')
 
@@ -68,6 +69,7 @@ test.group('Authorization catalog', (group) => {
     const doctorPermissions = doctor.permissions.map((permission) => permission.code)
 
     assert.include(doctorPermissions, 'medical_records.create')
+    assert.notInclude(doctorPermissions, 'medical_records.access_all')
     assert.include(doctorPermissions, 'attachments.upload')
     assert.include(doctorPermissions, 'schedules.manage_own')
     assert.notInclude(doctorPermissions, 'schedules.manage')
@@ -80,6 +82,11 @@ test.group('Authorization catalog', (group) => {
     assert.notInclude(doctorPermissions, 'appointments.change_status')
 
     assert.notInclude(doctorPermissions, 'users.assign_role')
+
+    assert.include(
+      clinicAdmin.permissions.map((permission) => permission.code),
+      'medical_records.access_all'
+    )
 
     const clinicRead = await Permission.query()
       .where('code', 'clinics.read')

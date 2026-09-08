@@ -15,13 +15,14 @@ import {
 import { getPostgreSqlError } from '#services/postgres_error'
 
 export async function createMedicalRecordEntry(
-  { clinicId, patientId, userId }: MedicalRecordContext,
+  { clinicId, patientId, userId, permissionCodes }: MedicalRecordContext,
   payload: Infer<typeof createMedicalRecordEntryValidator>
 ) {
   const result = await db.transaction(async (trx) => {
     const { patientLink, patient, medicalRecord } = await loadPatientContext({
       clinicId,
       patientId,
+      authorization: { userId, permissionCodes },
       client: trx,
       lock: true,
     })
@@ -93,7 +94,7 @@ export async function createMedicalRecordEntry(
 }
 
 export async function correctMedicalRecordEntry(
-  { clinicId, patientId, userId }: MedicalRecordContext,
+  { clinicId, patientId, userId, permissionCodes }: MedicalRecordContext,
   entryId: string,
   payload: Infer<typeof correctMedicalRecordEntryValidator>
 ) {
@@ -102,6 +103,7 @@ export async function correctMedicalRecordEntry(
       const { patientLink, patient, medicalRecord } = await loadPatientContext({
         clinicId,
         patientId,
+        authorization: { userId, permissionCodes },
         client: trx,
         lock: true,
       })

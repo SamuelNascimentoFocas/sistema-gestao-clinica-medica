@@ -8,7 +8,12 @@ import {
   registerMedicalRecordAccess,
 } from '#services/medical_record_access_service'
 
-export type MedicalRecordContext = { clinicId: string; patientId: string; userId: string }
+export type MedicalRecordContext = {
+  clinicId: string
+  patientId: string
+  userId: string
+  permissionCodes: readonly string[]
+}
 type ReadFilters = Infer<typeof readMedicalRecordValidator>
 
 function medicalRecordEntriesQuery(medicalRecordId: string) {
@@ -50,7 +55,7 @@ export async function loadMedicalRecordEntry({
 }
 
 export async function listMedicalRecordEntries(
-  { clinicId, patientId, userId }: MedicalRecordContext,
+  { clinicId, patientId, userId, permissionCodes }: MedicalRecordContext,
   filters: ReadFilters
 ) {
   validateAccessPurpose(filters)
@@ -58,6 +63,7 @@ export async function listMedicalRecordEntries(
   const { patientLink, patient, medicalRecord } = await loadPatientContext({
     clinicId,
     patientId,
+    authorization: { userId, permissionCodes },
   })
 
   const page = filters.page ?? 1
@@ -82,7 +88,7 @@ export async function listMedicalRecordEntries(
 }
 
 export async function readMedicalRecordEntry(
-  { clinicId, patientId, userId }: MedicalRecordContext,
+  { clinicId, patientId, userId, permissionCodes }: MedicalRecordContext,
   entryId: string,
   filters: ReadFilters
 ) {
@@ -91,6 +97,7 @@ export async function readMedicalRecordEntry(
   const { patientLink, patient, medicalRecord } = await loadPatientContext({
     clinicId,
     patientId,
+    authorization: { userId, permissionCodes },
   })
 
   const entry = await loadMedicalRecordEntry({ medicalRecordId: medicalRecord.id, entryId })

@@ -18,7 +18,12 @@ export default class MedicalRecordCorrectionsController {
 
     try {
       const entry = await correctMedicalRecordEntry(
-        { clinicId, patientId: params.patientId, userId: user.id },
+        {
+          clinicId,
+          patientId: params.patientId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         params.entryId,
         payload
       )

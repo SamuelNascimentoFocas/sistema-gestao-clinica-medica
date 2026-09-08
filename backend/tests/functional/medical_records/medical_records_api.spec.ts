@@ -28,6 +28,7 @@ import MedicalRecordEntry from '#models/medical_record_entry'
 import MedicalRecordAccessLog from '#models/medical_record_access_log'
 import MedicalRecordAttachment from '#models/medical_record_attachment'
 import ClinicProfessional from '#models/clinic_professional'
+import type { AppointmentStatus } from '#models/appointment'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
 import attachmentConfig from '#config/attachments'
@@ -199,15 +200,23 @@ async function createAppointment({
   author,
   startsAt,
   status = 'scheduled',
+  rescheduledFromAppointmentId = null,
+  cancellationReasonCode = 'patient_request',
 }: {
   clinic: Clinic
   patientLink: PatientClinic
   professionalLink: ClinicProfessional
   author: User
   startsAt: DateTime
-  status?: 'scheduled' | 'cancelled'
+  status?: AppointmentStatus
+  rescheduledFromAppointmentId?: string | null
+  cancellationReasonCode?: 'patient_request' | 'rescheduled'
 }) {
+  const isConfirmed = status === 'confirmed'
+  const isCompleted = status === 'completed'
   const isCancelled = status === 'cancelled'
+  const isNoShow = status === 'no_show'
+  const transitionAt = DateTime.utc()
 
   return AppointmentFactory.merge({
     clinicId: clinic.id,
@@ -217,9 +226,16 @@ async function createAppointment({
     endsAt: startsAt.plus({ hours: 1 }),
     status,
     createdByUserId: author.id,
-    cancelledAt: isCancelled ? DateTime.utc() : null,
+    confirmedAt: isConfirmed ? transitionAt : null,
+    confirmedByUserId: isConfirmed ? author.id : null,
+    completedAt: isCompleted ? transitionAt : null,
+    completedByUserId: isCompleted ? author.id : null,
+    cancelledAt: isCancelled ? transitionAt : null,
     cancelledByUserId: isCancelled ? author.id : null,
-    cancellationReasonCode: isCancelled ? 'patient_request' : null,
+    cancellationReasonCode: isCancelled ? cancellationReasonCode : null,
+    noShowAt: isNoShow ? transitionAt : null,
+    noShowByUserId: isNoShow ? author.id : null,
+    rescheduledFromAppointmentId,
   }).create()
 }
 
@@ -272,9 +288,24 @@ test.group('Medical records API', (group) => {
 
     const { patient } = await createPatient('Paciente de Permissões')
 
-    await createPatientLink({
+    const patientLink = await createPatientLink({
       patient,
       clinic,
+    })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Permissões do Prontuário',
+      crmNumber: '97901',
+    })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 1 }),
     })
 
     const route =
@@ -309,6 +340,406 @@ test.group('Medical records API', (group) => {
     assert.lengthOf(logs, 1)
     assert.equal(logs[0].accessAction, 'view_timeline')
     assert.equal(logs[0].purposeCode, 'patient_care')
+  })
+
+  test('requires a qualifying relationship across every medical record operation', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Gate do Prontuário',
+    }).create()
+    const unrelatedDoctor = await UserFactory.merge({
+      fullName: 'Médico sem Relação Clínica',
+      email: 'records.resource.unrelated@example.com',
+    }).create()
+    const authorDoctor = await UserFactory.merge({
+      fullName: 'Médica Autora do Prontuário',
+      email: 'records.resource.author@example.com',
+    }).create()
+
+    await createMembership({ user: unrelatedDoctor, clinic, roleCode: 'doctor' })
+    await createMembership({ user: authorDoctor, clinic, roleCode: 'doctor' })
+
+    const { patient, medicalRecord } = await createPatient('Paciente sem Relação com o Leitor')
+    const patientLink = await createPatientLink({ patient, clinic })
+
+    await createProfessionalLink({
+      clinic,
+      user: unrelatedDoctor,
+      fullName: 'Dr. Sem Consulta Qualificadora',
+      crmNumber: '98501',
+    })
+
+    const authorProfessionalLink = await createProfessionalLink({
+      clinic,
+      user: authorDoctor,
+      fullName: 'Dra. Autora do Registro',
+      crmNumber: '98502',
+    })
+
+    const entry = await createEntry({
+      medicalRecord,
+      patient,
+      clinic,
+      patientLink,
+      professionalLink: authorProfessionalLink,
+      author: authorDoctor,
+      content: 'Entrada protegida pelo gate de relação clínica.',
+    })
+
+    const attachment = await createStoredAttachment({
+      entry,
+      medicalRecord,
+      patient,
+      clinic,
+      uploader: authorDoctor,
+    })
+
+    const token = await createToken(unrelatedDoctor)
+    const routePrefix = `/api/v1/clinics/${clinic.id}/patients/${patient.id}/medical-record`
+    const entryRoute = `${routePrefix}/entries/${entry.id}`
+
+    const responses = [
+      await client
+        .get(`${routePrefix}?purposeCode=patient_care`)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`),
+      await client
+        .post(`${routePrefix}/entries`)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+        .json({ entryTypeCode: 'evolution', content: 'Tentativa sem relação clínica.' }),
+      await client
+        .post(`${entryRoute}/corrections`)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+        .json({ content: 'Correção sem relação clínica.' }),
+      await client
+        .get(`${entryRoute}/attachments?purposeCode=patient_care`)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`),
+      await client
+        .get(`${entryRoute}/attachments/${attachment.id}/download?purposeCode=patient_care`)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`),
+      await client
+        .post(`${entryRoute}/attachments`)
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+        .file('files[]', validPdfBuffer, {
+          filename: 'tentativa-sem-relacao.pdf',
+          contentType: 'application/pdf',
+        }),
+    ]
+
+    for (const response of responses) {
+      response.assertStatus(403)
+    }
+
+    const entries = await MedicalRecordEntry.query().where('medical_record_id', medicalRecord.id)
+    const attachments = await MedicalRecordAttachment.query().where(
+      'medical_record_id',
+      medicalRecord.id
+    )
+    const logs = await MedicalRecordAccessLog.query().where('medical_record_id', medicalRecord.id)
+
+    assert.lengthOf(entries, 1)
+    assert.lengthOf(attachments, 1)
+    assert.lengthOf(logs, 0)
+  })
+
+  test('uses an explicit qualifying appointment status allowlist and handles rescheduling', async ({
+    client,
+  }) => {
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Status Qualificadores',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Médica dos Status Qualificadores',
+      email: 'records.resource.statuses@example.com',
+    }).create()
+
+    await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dra. Status Qualificadores',
+      crmNumber: '98503',
+    })
+    const token = await createToken(doctor)
+    const statusExpectations: Array<{ status: AppointmentStatus; expectedStatus: 200 | 403 }> = [
+      { status: 'scheduled', expectedStatus: 200 },
+      { status: 'confirmed', expectedStatus: 200 },
+      { status: 'completed', expectedStatus: 200 },
+      { status: 'cancelled', expectedStatus: 403 },
+      { status: 'no_show', expectedStatus: 403 },
+    ]
+
+    for (const [index, expectation] of statusExpectations.entries()) {
+      const { patient } = await createPatient(`Paciente ${expectation.status}`)
+      const patientLink = await createPatientLink({ patient, clinic })
+      const startsAt =
+        expectation.status === 'completed'
+          ? DateTime.utc().minus({ days: 30 })
+          : DateTime.utc().plus({ days: 30 + index })
+
+      await createAppointment({
+        clinic,
+        patientLink,
+        professionalLink,
+        author: doctor,
+        startsAt,
+        status: expectation.status,
+      })
+
+      const response = await client
+        .get(
+          `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+            '/medical-record?purposeCode=patient_care'
+        )
+        .header('Accept', 'application/json')
+        .header('Authorization', `Bearer ${token}`)
+
+      response.assertStatus(expectation.expectedStatus)
+    }
+
+    const { patient: rescheduledPatient } = await createPatient('Paciente Reagendado')
+    const rescheduledPatientLink = await createPatientLink({ patient: rescheduledPatient, clinic })
+    const originalAppointment = await createAppointment({
+      clinic,
+      patientLink: rescheduledPatientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 40 }),
+      status: 'cancelled',
+      cancellationReasonCode: 'rescheduled',
+    })
+    const rescheduledRoute =
+      `/api/v1/clinics/${clinic.id}/patients/${rescheduledPatient.id}` +
+      '/medical-record?purposeCode=patient_care'
+
+    const cancelledOnlyResponse = await client
+      .get(rescheduledRoute)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    cancelledOnlyResponse.assertStatus(403)
+
+    await createAppointment({
+      clinic,
+      patientLink: rescheduledPatientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 41 }),
+      rescheduledFromAppointmentId: originalAppointment.id,
+    })
+
+    const rescheduledResponse = await client
+      .get(rescheduledRoute)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    rescheduledResponse.assertStatus(200)
+  })
+
+  test('scopes qualifying appointments to the current clinic patient and professional', async ({
+    client,
+  }) => {
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Escopo Resource-Level' }).create()
+    const otherClinic = await ClinicFactory.merge({ name: 'Outra Clínica Resource-Level' }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Médico do Escopo Resource-Level',
+      email: 'records.resource.scope@example.com',
+    }).create()
+    const otherDoctor = await UserFactory.merge({
+      fullName: 'Outro Médico do Escopo',
+      email: 'records.resource.scope.other@example.com',
+    }).create()
+
+    await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+    await createMembership({ user: doctor, clinic: otherClinic, roleCode: 'doctor' })
+
+    const currentProfessional = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Escopo Atual',
+      crmNumber: '98504',
+    })
+    const otherClinicProfessional = await ClinicProfessionalFactory.merge({
+      clinicId: otherClinic.id,
+      professionalId: currentProfessional.professionalId,
+      defaultAppointmentDurationMinutes: 60,
+    }).create()
+    const otherProfessional = await createProfessionalLink({
+      clinic,
+      user: otherDoctor,
+      fullName: 'Dra. Outro Profissional',
+      crmNumber: '98505',
+    })
+
+    const { patient: targetPatient } = await createPatient('Paciente Alvo do Escopo')
+    const targetLink = await createPatientLink({ patient: targetPatient, clinic })
+    const targetOtherClinicLink = await createPatientLink({
+      patient: targetPatient,
+      clinic: otherClinic,
+    })
+    const { patient: otherPatient } = await createPatient('Outro Paciente do Escopo')
+    const otherPatientLink = await createPatientLink({ patient: otherPatient, clinic })
+
+    await createAppointment({
+      clinic,
+      patientLink: otherPatientLink,
+      professionalLink: currentProfessional,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 50 }),
+    })
+    await createAppointment({
+      clinic,
+      patientLink: targetLink,
+      professionalLink: otherProfessional,
+      author: otherDoctor,
+      startsAt: DateTime.utc().plus({ days: 51 }),
+    })
+    await createAppointment({
+      clinic: otherClinic,
+      patientLink: targetOtherClinicLink,
+      professionalLink: otherClinicProfessional,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 52 }),
+    })
+
+    const token = await createToken(doctor)
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${targetPatient.id}` +
+      '/medical-record?purposeCode=patient_care'
+
+    const mismatchedRelationshipsResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    mismatchedRelationshipsResponse.assertStatus(403)
+
+    await createAppointment({
+      clinic,
+      patientLink: targetLink,
+      professionalLink: currentProfessional,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 53 }),
+    })
+
+    const matchingRelationshipResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    matchingRelationshipResponse.assertStatus(200)
+  })
+
+  test('preserves access-all global-admin operational-permission and active-context gates', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Bypasses Controlados' }).create()
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Administrador com Acesso Total',
+      email: 'records.resource.admin@example.com',
+    }).create()
+    const globalAdmin = await UserFactory.apply('globalAdmin')
+      .merge({
+        fullName: 'Administrador Global do Prontuário',
+        email: 'records.resource.global@example.com',
+      })
+      .create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Recepcionista com Relação Sintética',
+      email: 'records.resource.receptionist@example.com',
+    }).create()
+    const doctor = await UserFactory.merge({
+      fullName: 'Médico com Perfil Inativado',
+      email: 'records.resource.inactive-professional@example.com',
+    }).create()
+
+    await createMembership({ user: clinicAdmin, clinic, roleCode: 'clinic_admin' })
+    await createMembership({ user: receptionist, clinic, roleCode: 'receptionist' })
+    await createMembership({ user: doctor, clinic, roleCode: 'doctor' })
+
+    const { patient } = await createPatient('Paciente dos Bypasses Controlados')
+    const patientLink = await createPatientLink({ patient, clinic })
+    const receptionistProfessional = await createProfessionalLink({
+      clinic,
+      user: receptionist,
+      fullName: 'Dra. Relação sem Permissão Operacional',
+      crmNumber: '98507',
+    })
+    const inactiveProfessional = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dr. Perfil Clínico Inativo',
+      crmNumber: '98508',
+    })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink: receptionistProfessional,
+      author: receptionist,
+      startsAt: DateTime.utc().plus({ days: 60 }),
+    })
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink: inactiveProfessional,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 61 }),
+    })
+
+    inactiveProfessional.isActive = false
+    await inactiveProfessional.save()
+
+    const route =
+      `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
+      '/medical-record?purposeCode=patient_care'
+
+    const clinicAdminResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${await createToken(clinicAdmin)}`)
+    const globalAdminResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${await createToken(globalAdmin)}`)
+    const receptionistResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${await createToken(receptionist)}`)
+    const inactiveProfessionalResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${await createToken(doctor)}`)
+
+    clinicAdminResponse.assertStatus(200)
+    globalAdminResponse.assertStatus(200)
+    receptionistResponse.assertStatus(403)
+    inactiveProfessionalResponse.assertStatus(403)
+
+    patientLink.isActive = false
+    await patientLink.save()
+
+    const inactivePatientLinkResponse = await client
+      .get(route)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${await createToken(clinicAdmin)}`)
+
+    inactivePatientLinkResponse.assertStatus(409)
+    assert.equal(
+      inactivePatientLinkResponse.body().message,
+      'O paciente ou seu vínculo com o consultório está inativo'
+    )
   })
 
   test('returns the global timeline and registers clinic-scoped access', async ({
@@ -371,6 +802,14 @@ test.group('Medical records API', (group) => {
       user: secondDoctor,
       fullName: 'Dra. Segunda Timeline',
       crmNumber: '98002',
+    })
+
+    await createAppointment({
+      clinic: firstClinic,
+      patientLink: firstPatientLink,
+      professionalLink: firstProfessionalLink,
+      author: firstDoctor,
+      startsAt: DateTime.utc().plus({ days: 2 }),
     })
 
     const firstEntry = await createEntry({
@@ -485,7 +924,7 @@ test.group('Medical records API', (group) => {
 
     const { patient, medicalRecord } = await createPatient('Paciente da Entrada Global')
 
-    await createPatientLink({
+    const firstPatientLink = await createPatientLink({
       patient,
       clinic: firstClinic,
     })
@@ -526,6 +965,14 @@ test.group('Medical records API', (group) => {
       user: readerDoctor,
       fullName: 'Dr. Leitor da Entrada',
       crmNumber: '98102',
+    })
+
+    await createAppointment({
+      clinic: firstClinic,
+      patientLink: firstPatientLink,
+      professionalLink: readerProfessionalLink,
+      author: readerDoctor,
+      startsAt: DateTime.utc().plus({ days: 3 }),
     })
 
     const otherEntry = await createEntry({
@@ -618,6 +1065,21 @@ test.group('Medical records API', (group) => {
     const patientLink = await createPatientLink({
       patient,
       clinic,
+    })
+
+    const professionalLink = await createProfessionalLink({
+      clinic,
+      user: doctor,
+      fullName: 'Dra. Finalidade do Prontuário',
+      crmNumber: '98103',
+    })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 4 }),
     })
 
     const token = await createToken(doctor)
@@ -906,6 +1368,14 @@ test.group('Medical records API', (group) => {
       startsAt: DateTime.utc().plus({ days: 13 }),
     })
 
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink: firstProfessionalLink,
+      author: firstDoctor,
+      startsAt: DateTime.utc().plus({ days: 14 }),
+    })
+
     const token = await createToken(firstDoctor)
 
     const route = `/api/v1/clinics/${clinic.id}/patients/${patient.id}` + '/medical-record/entries'
@@ -1036,6 +1506,22 @@ test.group('Medical records API', (group) => {
 
     assert.equal(firstPatientLink.clinicId, firstClinic.id)
     assert.equal(firstProfessionalLink.clinicId, firstClinic.id)
+
+    await createAppointment({
+      clinic: firstClinic,
+      patientLink: firstPatientLink,
+      professionalLink: firstProfessionalLink,
+      author: firstDoctor,
+      startsAt: DateTime.utc().plus({ days: 15 }),
+    })
+
+    await createAppointment({
+      clinic: secondClinic,
+      patientLink: secondPatientLink,
+      professionalLink: secondProfessionalLink,
+      author: secondDoctor,
+      startsAt: DateTime.utc().plus({ days: 16 }),
+    })
 
     const originalEntry = await createEntry({
       medicalRecord,
@@ -1181,6 +1667,14 @@ test.group('Medical records API', (group) => {
       content: 'Entrada sujeita a correções concorrentes.',
     })
 
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 17 }),
+    })
+
     const token = await createToken(doctor)
 
     const route =
@@ -1264,6 +1758,14 @@ test.group('Medical records API', (group) => {
       professionalLink,
       author: doctor,
       content: 'Entrada clínica destinada aos anexos.',
+    })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 18 }),
     })
 
     const token = await createToken(doctor)
@@ -1383,6 +1885,14 @@ test.group('Medical records API', (group) => {
       author: doctor,
       content: 'Entrada para tipos arbitrários de anexos.',
     })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 19 }),
+    })
     const token = await createToken(doctor)
     const route =
       `/api/v1/clinics/${clinic.id}/patients/${patient.id}` +
@@ -1480,6 +1990,13 @@ test.group('Medical records API', (group) => {
         professionalLink,
         author: doctor,
         content: 'Entrada para testar compensação de arquivos sintéticos.',
+      })
+      await createAppointment({
+        clinic,
+        patientLink,
+        professionalLink,
+        author: doctor,
+        startsAt: DateTime.utc().plus({ days: 20 }),
       })
       const token = await createToken(doctor)
       const failure = new Error(`Synthetic attachment failure: ${failureStage}`)
@@ -1594,7 +2111,7 @@ test.group('Medical records API', (group) => {
 
     const { patient, medicalRecord } = await createPatient('Paciente de Isolamento de Anexos')
 
-    await createPatientLink({
+    const firstPatientLink = await createPatientLink({
       patient,
       clinic: firstClinic,
     })
@@ -1609,6 +2126,21 @@ test.group('Medical records API', (group) => {
       user: secondDoctor,
       fullName: 'Dra. Origem do Anexo',
       crmNumber: '98302',
+    })
+
+    const firstProfessionalLink = await createProfessionalLink({
+      clinic: firstClinic,
+      user: firstDoctor,
+      fullName: 'Dr. Escopo de Upload',
+      crmNumber: '98312',
+    })
+
+    await createAppointment({
+      clinic: firstClinic,
+      patientLink: firstPatientLink,
+      professionalLink: firstProfessionalLink,
+      author: firstDoctor,
+      startsAt: DateTime.utc().plus({ days: 21 }),
     })
 
     const secondClinicEntry = await createEntry({
@@ -1711,6 +2243,14 @@ test.group('Medical records API', (group) => {
       professionalLink,
       author: doctor,
       content: 'Entrada para validação dos arquivos.',
+    })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 22 }),
     })
 
     const token = await createToken(doctor)
@@ -1832,6 +2372,21 @@ test.group('Medical records API', (group) => {
       user: authorDoctor,
       fullName: 'Dra. Autora dos Anexos',
       crmNumber: '98401',
+    })
+
+    const readerProfessionalLink = await createProfessionalLink({
+      clinic: firstClinic,
+      user: readerDoctor,
+      fullName: 'Dr. Leitor de Anexos',
+      crmNumber: '98411',
+    })
+
+    await createAppointment({
+      clinic: firstClinic,
+      patientLink: firstPatientLink,
+      professionalLink: readerProfessionalLink,
+      author: readerDoctor,
+      startsAt: DateTime.utc().plus({ days: 23 }),
     })
 
     const entry = await createEntry({
@@ -1978,6 +2533,14 @@ test.group('Medical records API', (group) => {
       content: 'Entrada destinada ao teste de download.',
     })
 
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 24 }),
+    })
+
     const attachment = await createStoredAttachment({
       entry,
       medicalRecord,
@@ -2064,6 +2627,13 @@ test.group('Medical records API', (group) => {
       author: doctor,
       content: 'Entrada destinada ao download de conteúdo ativo.',
     })
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 25 }),
+    })
     const activeContents = Buffer.from('<script>window.alert("unsafe")</script>')
     const attachment = await createStoredAttachment({
       entry,
@@ -2143,6 +2713,14 @@ test.group('Medical records API', (group) => {
       professionalLink,
       author: doctor,
       content: 'Entrada com anexos indisponíveis.',
+    })
+
+    await createAppointment({
+      clinic,
+      patientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 26 }),
     })
 
     const pendingAttachment = await createStoredAttachment({
@@ -2285,6 +2863,14 @@ test.group('Medical records API', (group) => {
       content: 'Entrada pertencente ao segundo paciente.',
     })
 
+    await createAppointment({
+      clinic,
+      patientLink: secondPatientLink,
+      professionalLink,
+      author: doctor,
+      startsAt: DateTime.utc().plus({ days: 27 }),
+    })
+
     const attachment = await createStoredAttachment({
       entry: secondEntry,
       medicalRecord: secondMedicalRecord,
@@ -2325,7 +2911,7 @@ test.group('Medical records API', (group) => {
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${doctorToken}`)
 
-    wrongPatientResponse.assertStatus(404)
+    wrongPatientResponse.assertStatus(403)
 
     const firstPatientLogs = await MedicalRecordAccessLog.query().where(
       'medical_record_id',

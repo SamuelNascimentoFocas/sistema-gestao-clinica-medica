@@ -20,7 +20,12 @@ export default class MedicalRecordEntriesController {
 
     try {
       const entry = await readMedicalRecordEntry(
-        { clinicId: clinicAuthorization.clinic.id, patientId: params.patientId, userId: user.id },
+        {
+          clinicId: clinicAuthorization.clinic.id,
+          patientId: params.patientId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         params.entryId,
         filters
       )
@@ -49,7 +54,12 @@ export default class MedicalRecordEntriesController {
 
     try {
       const entry = await createMedicalRecordEntry(
-        { clinicId, patientId: params.patientId, userId: user.id },
+        {
+          clinicId,
+          patientId: params.patientId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         payload
       )
 

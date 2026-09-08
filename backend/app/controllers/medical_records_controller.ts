@@ -16,7 +16,12 @@ export default class MedicalRecordsController {
 
     try {
       const { patientLink, patient, medicalRecord, entries } = await listMedicalRecordEntries(
-        { clinicId: clinicAuthorization.clinic.id, patientId: params.patientId, userId: user.id },
+        {
+          clinicId: clinicAuthorization.clinic.id,
+          patientId: params.patientId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         filters
       )
 

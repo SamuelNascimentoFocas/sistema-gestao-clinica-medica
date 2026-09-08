@@ -41,7 +41,13 @@ export default class MedicalRecordAttachmentDownloadsController {
 
     try {
       const { attachment, fileContents } = await downloadAttachment(
-        { clinicId, patientId: params.patientId, entryId: params.entryId, userId: user.id },
+        {
+          clinicId,
+          patientId: params.patientId,
+          entryId: params.entryId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         params.attachmentId,
         filters
       )

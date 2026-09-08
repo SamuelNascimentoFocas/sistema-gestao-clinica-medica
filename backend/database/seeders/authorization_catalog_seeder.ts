@@ -114,6 +114,10 @@ export const PERMISSIONS = [
     description: 'Visualizar prontuários',
   },
   {
+    code: 'medical_records.access_all',
+    description: 'Acessar prontuários sem exigir relação profissional com o paciente',
+  },
+  {
     code: 'medical_records.create',
     description: 'Registrar entradas em prontuários',
   },

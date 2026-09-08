@@ -3,15 +3,21 @@ import PatientClinic from '#models/patient_clinic'
 import ClinicProfessional from '#models/clinic_professional'
 import MedicalRecordEntry from '#models/medical_record_entry'
 import DomainError from '#exceptions/domain_error'
+import {
+  assertPatientMedicalRecordAccess,
+  type PatientMedicalRecordAuthorization,
+} from '#services/medical_record_authorization_service'
 
 export async function loadPatientContext({
   clinicId,
   patientId,
+  authorization,
   client,
   lock = false,
 }: {
   clinicId: string
   patientId: string
+  authorization: PatientMedicalRecordAuthorization
   client?: TransactionClientContract
   lock?: boolean
 }) {
@@ -43,6 +49,13 @@ export async function loadPatientContext({
   if (!medicalRecord) {
     throw new DomainError('conflict', 'O paciente não possui um prontuário associado')
   }
+
+  await assertPatientMedicalRecordAccess({
+    clinicId,
+    patientClinicId: patientLink.id,
+    authorization,
+    client,
+  })
 
   return {
     patientLink,

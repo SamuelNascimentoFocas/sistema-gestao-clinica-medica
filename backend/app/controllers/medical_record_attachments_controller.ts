@@ -41,7 +41,13 @@ export default class MedicalRecordAttachmentsController {
 
     try {
       const attachments = await listAttachments(
-        { clinicId, patientId: params.patientId, entryId: params.entryId, userId: user.id },
+        {
+          clinicId,
+          patientId: params.patientId,
+          entryId: params.entryId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         filters
       )
 
@@ -74,7 +80,13 @@ export default class MedicalRecordAttachmentsController {
 
     try {
       upload = await uploadAttachments(
-        { clinicId, patientId: params.patientId, entryId: params.entryId, userId: user.id },
+        {
+          clinicId,
+          patientId: params.patientId,
+          entryId: params.entryId,
+          userId: user.id,
+          permissionCodes: clinicAuthorization.permissionCodes,
+        },
         payload
       )
 

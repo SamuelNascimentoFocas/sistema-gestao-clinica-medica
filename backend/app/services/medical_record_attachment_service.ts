@@ -23,7 +23,13 @@ import {
   readAttachmentBytes,
 } from '#services/attachment_storage_service'
 
-type AttachmentContext = { clinicId: string; patientId: string; entryId: string; userId: string }
+type AttachmentContext = {
+  clinicId: string
+  patientId: string
+  entryId: string
+  userId: string
+  permissionCodes: readonly string[]
+}
 type ReadFilters = Infer<typeof readMedicalRecordAttachmentsValidator>
 type UploadPayload = Infer<typeof uploadMedicalRecordAttachmentsValidator>
 
@@ -53,7 +59,7 @@ async function loadAttachment({
 }
 
 export async function listAttachments(
-  { clinicId, patientId, entryId, userId }: AttachmentContext,
+  { clinicId, patientId, entryId, userId, permissionCodes }: AttachmentContext,
   filters: ReadFilters
 ) {
   validateAccessPurpose(filters)
@@ -61,6 +67,7 @@ export async function listAttachments(
   const { patientLink, patient, medicalRecord } = await loadPatientContext({
     clinicId,
     patientId,
+    authorization: { userId, permissionCodes },
   })
 
   const entry = await loadReadableEntry({
@@ -95,7 +102,7 @@ export async function listAttachments(
 }
 
 export async function uploadAttachments(
-  { clinicId, patientId, entryId, userId }: AttachmentContext,
+  { clinicId, patientId, entryId, userId, permissionCodes }: AttachmentContext,
   payload: UploadPayload
 ) {
   const movedStorageKeys: string[] = []
@@ -103,6 +110,7 @@ export async function uploadAttachments(
     const { patient, medicalRecord } = await loadPatientContext({
       clinicId,
       patientId,
+      authorization: { userId, permissionCodes },
     })
 
     const entry = await loadWritableEntry({
@@ -124,6 +132,7 @@ export async function uploadAttachments(
       const currentContext = await loadPatientContext({
         clinicId,
         patientId,
+        authorization: { userId, permissionCodes },
         client: trx,
         lock: true,
       })
@@ -179,7 +188,7 @@ export async function uploadAttachments(
 }
 
 export async function downloadAttachment(
-  { clinicId, patientId, entryId, userId }: AttachmentContext,
+  { clinicId, patientId, entryId, userId, permissionCodes }: AttachmentContext,
   attachmentId: string,
   filters: ReadFilters
 ) {
@@ -188,6 +197,7 @@ export async function downloadAttachment(
   const { patientLink, patient, medicalRecord } = await loadPatientContext({
     clinicId,
     patientId,
+    authorization: { userId, permissionCodes },
   })
 
   const entry = await loadReadableEntry({
