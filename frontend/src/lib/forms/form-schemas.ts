@@ -33,11 +33,22 @@ export const memberFormSchema = z.object({
       (value) => new TextEncoder().encode(value).length <= 72,
       "A senha ultrapassa o limite de 72 bytes.",
     ),
-  roleCode: z.enum(["clinic_admin", "doctor", "receptionist"]),
+  roleId: z.string().uuid("Selecione um perfil válido."),
+});
+
+export const customRoleFormSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(3, "Use ao menos 3 caracteres.")
+    .max(120, "Use no máximo 120 caracteres."),
+  description: z.string().max(255, "Use no máximo 255 caracteres."),
+  permissionCodes: z.array(z.string().min(1)),
 });
 
 export type LoginFormValues = z.infer<typeof loginFormSchema>;
 export type MemberFormValues = z.infer<typeof memberFormSchema>;
+export type CustomRoleFormValues = z.infer<typeof customRoleFormSchema>;
 
 // Create/edit intentionally submit the same complete set of browser fields.
 // CPF, CEP and UF keep their existing onChange normalization and HTML maxima;

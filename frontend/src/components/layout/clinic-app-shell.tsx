@@ -126,6 +126,7 @@ function ClinicShellContent({
             "users.create",
             "users.update",
             "users.assign_role",
+            "roles.manage",
             "professionals.create",
             "professionals.update",
           ],

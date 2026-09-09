@@ -11,14 +11,14 @@ test("remote tables build their own relative BFF query with numeric pagination",
       "/api/clinics/clinic-id/members",
       {
         search: "Ana Silva",
-        roleCode: "doctor",
+        roleId: "11111111-1111-4111-8111-111111111111",
         isActive: true,
         ignored: undefined,
       },
       2,
       20,
     ),
-    "/api/clinics/clinic-id/members?page=2&perPage=20&isActive=true&roleCode=doctor&search=Ana+Silva",
+    "/api/clinics/clinic-id/members?page=2&perPage=20&isActive=true&roleId=11111111-1111-4111-8111-111111111111&search=Ana+Silva",
   );
 
   assert.throws(

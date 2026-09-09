@@ -1,6 +1,6 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
-import { isClinicMemberRoleCode } from "@/types/administration";
+import { isUuid, parseRoleIdPayload } from "@/lib/administration/role-contract";
 
 type RouteContext = {
   params: Promise<{
@@ -36,6 +36,9 @@ function parsePositiveInteger(value: string | null, maximum?: number) {
 
 export async function GET(request: Request, context: RouteContext) {
   const { clinicId } = await context.params;
+  if (!isUuid(clinicId)) {
+    return Response.json({ message: "Clínica inválida" }, { status: 422 });
+  }
   const requestUrl = new URL(request.url);
   const backendQuery = new URLSearchParams();
 
@@ -68,14 +71,14 @@ export async function GET(request: Request, context: RouteContext) {
     backendQuery.set("search", search);
   }
 
-  const roleCode = requestUrl.searchParams.get("roleCode");
+  const roleId = requestUrl.searchParams.get("roleId");
 
-  if (roleCode !== null) {
-    if (!isClinicMemberRoleCode(roleCode)) {
+  if (roleId !== null) {
+    if (!isUuid(roleId)) {
       return Response.json({ message: "Perfil inválido" }, { status: 422 });
     }
 
-    backendQuery.set("roleCode", roleCode);
+    backendQuery.set("roleId", roleId);
   }
 
   const isActive = requestUrl.searchParams.get("isActive");
@@ -127,7 +130,7 @@ export async function POST(
     typeof body.email === "string" ? body.email.trim() : "";
   const password =
     typeof body.password === "string" ? body.password : "";
-  const roleCode = body.roleCode;
+  const roleResult = parseRoleIdPayload(body);
 
   if (fullName.length < 3 || fullName.length > 180) {
     return Response.json(
@@ -172,18 +175,14 @@ export async function POST(
     );
   }
 
-  if (!isClinicMemberRoleCode(roleCode)) {
-    return Response.json(
-      {
-        message: "Perfil inválido",
-      },
-      {
-        status: 422,
-      },
-    );
+  if (!roleResult.ok) {
+    return Response.json({ message: roleResult.message }, { status: roleResult.status });
   }
 
   const { clinicId } = await context.params;
+  if (!isUuid(clinicId)) {
+    return Response.json({ message: "Clínica inválida" }, { status: 422 });
+  }
 
   return authenticatedBackendJson(
     `/api/v1/clinics/${encodeURIComponent(clinicId)}/members`,
@@ -193,7 +192,7 @@ export async function POST(
         fullName,
         email,
         password,
-        roleCode,
+        roleId: roleResult.value.roleId,
       }),
     },
   );

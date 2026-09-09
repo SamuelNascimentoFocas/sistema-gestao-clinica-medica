@@ -34,17 +34,16 @@ export default async function ProfessionalsPage({
     ["professionals.update"],
   );
 
-  let doctorOptions: ProfessionalUserOption[] = [];
+  let professionalUserOptions: ProfessionalUserOption[] = [];
 
   if (canCreate) {
     const members = await getClinicMembers(clinicId);
 
-    doctorOptions = (members ?? [])
+    professionalUserOptions = (members ?? [])
       .filter(
         (membership) =>
           membership.isActive &&
           membership.role.isActive &&
-          membership.role.code === "doctor" &&
           membership.user.isActive &&
           !membership.user.isGlobalAdmin,
       )
@@ -73,7 +72,7 @@ export default async function ProfessionalsPage({
         clinicId={clinicId}
         canCreate={canCreate}
         canUpdate={canUpdate}
-        doctorOptions={doctorOptions}
+        professionalUserOptions={professionalUserOptions}
       />
     </div>
   );

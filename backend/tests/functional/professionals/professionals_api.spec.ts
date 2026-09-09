@@ -5,6 +5,8 @@ import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
 import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
+import Role from '#models/role'
+import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
 
@@ -346,7 +348,7 @@ test.group('Professionals API', (group) => {
       message: 'Esta conta de usuário já está vinculada a outro profissional',
     })
 
-    const invalidRoleResponse = await client
+    const nonDoctorRoleResponse = await client
       .post(`/api/v1/clinics/${firstClinic.id}/professionals`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
@@ -358,10 +360,11 @@ test.group('Professionals API', (group) => {
         userId: receptionistUser.id,
       })
 
-    invalidRoleResponse.assertStatus(409)
-    invalidRoleResponse.assertBodyContains({
-      message: 'A conta informada não possui vínculo médico ativo neste consultório',
-    })
+    nonDoctorRoleResponse.assertStatus(201)
+    assert.equal(
+      nonDoctorRoleResponse.body().professionalLink.professional.user.id,
+      receptionistUser.id
+    )
 
     const duplicateLinkResponse = await client
       .post(`/api/v1/clinics/${firstClinic.id}/professionals`)
@@ -424,7 +427,185 @@ test.group('Professionals API', (group) => {
     const professionals = await Professional.all()
     const links = await ClinicProfessional.all()
 
-    assert.lengthOf(professionals, 1)
-    assert.lengthOf(links, 1)
+    assert.lengthOf(professionals, 2)
+    assert.lengthOf(links, 2)
+  })
+
+  test('links custom-role accounts without granting permissions and preserves scope checks', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Perfil Personalizado',
+    }).create()
+    const otherClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Outra Clínica de Perfil Personalizado',
+    }).create()
+
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Administrador de Profissionais Customizados',
+      email: 'custom.professional.admin@example.com',
+    }).create()
+    await createMembership({ user: clinicAdmin, clinic, roleCode: 'clinic_admin' })
+
+    const customRole = await Role.create({
+      code: 'custom_professional_identity',
+      name: 'Profissional personalizado',
+      description: 'Perfil sem permissões operacionais',
+      clinicId: clinic.id,
+      isSystem: false,
+      isActive: true,
+    })
+    assert.notEqual(customRole.code, 'doctor')
+
+    const customRoleUser = await UserFactory.merge({
+      fullName: 'Conta com Perfil Personalizado',
+      email: 'custom.professional.user@example.com',
+    }).create()
+    await UserClinicRole.create({
+      userId: customRoleUser.id,
+      clinicId: clinic.id,
+      roleId: customRole.id,
+      isActive: true,
+    })
+
+    const token = await createToken(clinicAdmin)
+    const linkResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dra. Perfil Personalizado',
+        crmNumber: '77770',
+        crmState: 'MG',
+        specialty: 'Clínica Médica',
+        userId: customRoleUser.id,
+      })
+
+    linkResponse.assertStatus(201)
+    assert.equal(linkResponse.body().professionalLink.professional.user.id, customRoleUser.id)
+
+    const customRoleUserToken = await createToken(customRoleUser)
+    const unauthorizedResponse = await client
+      .get(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${customRoleUserToken}`)
+
+    unauthorizedResponse.assertStatus(403)
+
+    const otherClinicUser = await UserFactory.merge({
+      fullName: 'Conta de Outra Clínica',
+      email: 'other.clinic.professional@example.com',
+    }).create()
+    await createMembership({ user: otherClinicUser, clinic: otherClinic, roleCode: 'doctor' })
+
+    const crossClinicResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dr. Outra Clínica',
+        crmNumber: '77771',
+        crmState: 'MG',
+        specialty: 'Cardiologia',
+        userId: otherClinicUser.id,
+      })
+
+    crossClinicResponse.assertStatus(409)
+    crossClinicResponse.assertBodyContains({
+      message: 'A conta informada não possui vínculo ativo neste consultório',
+    })
+
+    const inactiveUser = await UserFactory.merge({
+      fullName: 'Conta Globalmente Inativa',
+      email: 'inactive.custom.professional@example.com',
+      isActive: false,
+    }).create()
+    await UserClinicRole.create({
+      userId: inactiveUser.id,
+      clinicId: clinic.id,
+      roleId: customRole.id,
+      isActive: true,
+    })
+
+    const inactiveUserResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dra. Conta Inativa',
+        crmNumber: '77772',
+        crmState: 'MG',
+        specialty: 'Neurologia',
+        userId: inactiveUser.id,
+      })
+
+    inactiveUserResponse.assertStatus(409)
+
+    const inactiveMembershipUser = await UserFactory.merge({
+      fullName: 'Conta com Vínculo Inativo',
+      email: 'inactive.membership.professional@example.com',
+    }).create()
+    await UserClinicRole.create({
+      userId: inactiveMembershipUser.id,
+      clinicId: clinic.id,
+      roleId: customRole.id,
+      isActive: false,
+    })
+
+    const inactiveMembershipResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dr. Vínculo Inativo',
+        crmNumber: '77773',
+        crmState: 'MG',
+        specialty: 'Pediatria',
+        userId: inactiveMembershipUser.id,
+      })
+
+    inactiveMembershipResponse.assertStatus(409)
+
+    const inactiveClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Inativa de Profissionais',
+      isActive: false,
+    }).create()
+    const inactiveClinicAdmin = await UserFactory.merge({
+      fullName: 'Administrador da Clínica Inativa',
+      email: 'inactive.clinic.professional.admin@example.com',
+    }).create()
+    const inactiveClinicCandidate = await UserFactory.merge({
+      fullName: 'Conta da Clínica Inativa',
+      email: 'inactive.clinic.professional.user@example.com',
+    }).create()
+    await createMembership({
+      user: inactiveClinicAdmin,
+      clinic: inactiveClinic,
+      roleCode: 'clinic_admin',
+    })
+    await createMembership({
+      user: inactiveClinicCandidate,
+      clinic: inactiveClinic,
+      roleCode: 'doctor',
+    })
+
+    const inactiveClinicToken = await createToken(inactiveClinicAdmin)
+    const inactiveClinicResponse = await client
+      .post(`/api/v1/clinics/${inactiveClinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${inactiveClinicToken}`)
+      .json({
+        fullName: 'Dra. Clínica Inativa',
+        crmNumber: '77774',
+        crmState: 'MG',
+        specialty: 'Dermatologia',
+        userId: inactiveClinicCandidate.id,
+      })
+
+    inactiveClinicResponse.assertStatus(403)
   })
 })

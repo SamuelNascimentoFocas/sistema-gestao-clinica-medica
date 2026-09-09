@@ -9,6 +9,7 @@ import {
 import {
   loginFormSchema,
   memberFormSchema,
+  customRoleFormSchema,
   patientFormSchema,
   professionalFormSchema,
   professionalLinkFormSchema,
@@ -45,17 +46,18 @@ test("login keeps the HTML email grammar and does not add a password limit", () 
 });
 
 test("member validation preserves lengths, roles and the existing 72-byte password rule", () => {
+  const roleId = "11111111-1111-4111-8111-111111111111";
   const values = {
     fullName: "  Ana  ",
     email: "ana!teste@example.com",
     password: "á".repeat(36),
-    roleCode: "doctor",
+    roleId,
   };
   assert.deepEqual(memberFormSchema.parse(values), values);
   for (const change of [
     { password: "á".repeat(37) },
     { password: "x".repeat(11) },
-    { roleCode: "global_admin" },
+    { roleId: "invalid-role" },
     { fullName: "AB" },
   ]) {
     assert.equal(
@@ -72,7 +74,7 @@ test("the Zod resolver returns unchanged valid values and accessible field error
     fullName: "  Ana  ",
     email: "ana@example.com",
     password: "a".repeat(12),
-    roleCode: "receptionist",
+    roleId: "22222222-2222-4222-8222-222222222222",
   };
   assert.deepEqual(await resolver(values, undefined, options), {
     values,
@@ -88,6 +90,28 @@ test("the Zod resolver returns unchanged valid values and accessible field error
     invalid.errors.password.message,
     "A senha ultrapassa o limite de 72 bytes.",
   );
+});
+
+test("custom role validation keeps the backend name and description limits", () => {
+  const values = {
+    name: "  Apoio clínico  ",
+    description: "Permissões assistenciais",
+    permissionCodes: ["patients.read", "medical_records.read"],
+  };
+  assert.deepEqual(customRoleFormSchema.parse(values), {
+    ...values,
+    name: "Apoio clínico",
+  });
+  for (const change of [
+    { name: "AB" },
+    { name: "x".repeat(121) },
+    { description: "x".repeat(256) },
+  ]) {
+    assert.equal(
+      customRoleFormSchema.safeParse({ ...values, ...change }).success,
+      false,
+    );
+  }
 });
 
 test("patient create/edit retain all optional strings and the existing browser limits", () => {

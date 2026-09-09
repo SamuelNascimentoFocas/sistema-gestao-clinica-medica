@@ -36,7 +36,7 @@ export async function registerProfessional(
           )
         }
 
-        const doctorMembership = await UserClinicRole.query({
+        const activeMembership = await UserClinicRole.query({
           client: trx,
         })
           .where('user_id', user.id)
@@ -45,14 +45,10 @@ export async function registerProfessional(
           .preload('role')
           .first()
 
-        if (
-          !doctorMembership ||
-          !doctorMembership.role.isActive ||
-          doctorMembership.role.code !== 'doctor'
-        ) {
+        if (!activeMembership || !activeMembership.role.isActive) {
           throw new DomainError(
             'conflict',
-            'A conta informada não possui vínculo médico ativo neste consultório'
+            'A conta informada não possui vínculo ativo neste consultório'
           )
         }
       }

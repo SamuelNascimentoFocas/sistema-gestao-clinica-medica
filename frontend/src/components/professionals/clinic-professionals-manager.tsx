@@ -36,7 +36,7 @@ type ClinicProfessionalsManagerProps = {
   clinicId: string;
   canCreate: boolean;
   canUpdate: boolean;
-  doctorOptions: ProfessionalUserOption[];
+  professionalUserOptions: ProfessionalUserOption[];
 };
 
 async function readResponseMessage(response: BrowserResponse) {
@@ -63,7 +63,7 @@ export function ClinicProfessionalsManager({
   clinicId,
   canCreate,
   canUpdate,
-  doctorOptions,
+  professionalUserOptions,
 }: ClinicProfessionalsManagerProps) {
   const router = useRouter();
   const [page, setPage] = useState(1);
@@ -276,7 +276,7 @@ export function ClinicProfessionalsManager({
       {canCreate ? (
         <CreateProfessionalCard
           clinicId={clinicId}
-          doctorOptions={doctorOptions}
+          professionalUserOptions={professionalUserOptions}
           onCreated={handleProfessionalCreated}
         />
       ) : null}

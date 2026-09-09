@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useState } from "react";
 import {
   RemoteDataTable,
   type RemoteDataTableColumn,
@@ -23,11 +23,14 @@ import {
   type MemberFormValues,
 } from "@/lib/forms/form-schemas";
 import {
-  CLINIC_MEMBER_ROLES,
-  isClinicMemberRoleCode,
+  isUuid,
+  parseClinicRolesResponse,
+  rolesForMembershipSelect,
+} from "@/lib/administration/role-contract";
+import {
   type ClinicMember,
   type ClinicMemberResponse,
-  type ClinicMemberRoleCode,
+  type ClinicRole,
 } from "@/types/administration";
 
 type ClinicMembersManagerProps = {
@@ -36,6 +39,7 @@ type ClinicMembersManagerProps = {
   canCreate: boolean;
   canAssignRole: boolean;
   canChangeStatus: boolean;
+  assignableRolesRefreshKey: number;
 };
 
 type MemberStatusFilter = "all" | "active" | "inactive";
@@ -44,7 +48,7 @@ const INITIAL_FORM: MemberFormValues = {
   fullName: "",
   email: "",
   password: "",
-  roleCode: "receptionist",
+  roleId: "",
 };
 
 function getResponseMessage(body: unknown, fallback: string) {
@@ -92,11 +96,14 @@ export function ClinicMembersManager({
   canCreate,
   canAssignRole,
   canChangeStatus,
+  assignableRolesRefreshKey,
 }: ClinicMembersManagerProps) {
   const {
     control,
     register,
     reset,
+    getValues,
+    setValue,
     handleSubmit: submitForm,
     formState: { errors, isSubmitting: isCreating },
   } = useForm<MemberFormValues>({
@@ -106,9 +113,11 @@ export function ClinicMembersManager({
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
-  const [roleFilter, setRoleFilter] = useState<ClinicMemberRoleCode | "all">("all");
+  const [roleFilter, setRoleFilter] = useState<string | "all">("all");
   const [statusFilter, setStatusFilter] = useState<MemberStatusFilter>("all");
-  const [roleDrafts, setRoleDrafts] = useState<Record<string, ClinicMemberRoleCode>>({});
+  const [roleDrafts, setRoleDrafts] = useState<Record<string, string>>({});
+  const [assignableRoles, setAssignableRoles] = useState<ClinicRole[]>([]);
+  const [rolesLoading, setRolesLoading] = useState(canAssignRole);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -130,6 +139,72 @@ export function ClinicMembersManager({
   function reloadMembers() {
     setRefreshKey((current) => current + 1);
   }
+
+  const loadAssignableRoles = useCallback(async (signal?: AbortSignal) => {
+    await Promise.resolve();
+    if (signal?.aborted) return;
+
+    if (!canAssignRole) {
+      setAssignableRoles([]);
+      setRolesLoading(false);
+      return;
+    }
+
+    setRolesLoading(true);
+    setAssignableRoles([]);
+
+    try {
+      const response = await browserApi.get(
+        `/api/clinics/${encodeURIComponent(clinicId)}/roles/assignable`,
+        { signal },
+      );
+
+      if (signal?.aborted) return;
+
+      if (handleUnauthenticated(response)) return;
+
+      const body = await readResponse(response);
+      if (!isSuccessfulResponse(response)) {
+        throw new Error(
+          getResponseMessage(body, "Não foi possível carregar os perfis atribuíveis."),
+        );
+      }
+
+      const roles = parseClinicRolesResponse(body);
+      if (!roles) throw new Error("O servidor retornou perfis atribuíveis inválidos.");
+
+      setAssignableRoles(roles);
+      setRoleFilter((current) =>
+        current !== "all" && !roles.some((role) => role.id === current)
+          ? "all"
+          : current,
+      );
+      const currentRoleId = getValues("roleId");
+      if (!roles.some((role) => role.id === currentRoleId)) {
+        setValue("roleId", roles[0]?.id ?? "");
+      }
+    } catch (error) {
+      if (signal?.aborted) return;
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar os perfis atribuíveis.",
+      );
+    } finally {
+      if (!signal?.aborted) setRolesLoading(false);
+    }
+  }, [canAssignRole, clinicId, getValues, setValue]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      void loadAssignableRoles(controller.signal);
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [assignableRolesRefreshKey, loadAssignableRoles]);
 
   async function handleCreate(form: MemberFormValues) {
     setPendingAction("create");
@@ -158,7 +233,7 @@ export function ClinicMembersManager({
         throw new Error("O servidor retornou um vínculo inválido.");
       }
 
-      reset(INITIAL_FORM);
+      reset({ ...INITIAL_FORM, roleId: assignableRoles[0]?.id ?? "" });
       setSearchInput("");
       setAppliedSearch("");
       setRoleFilter("all");
@@ -178,9 +253,9 @@ export function ClinicMembersManager({
   }
 
   async function handleRoleUpdate(member: ClinicMember) {
-    const roleCode = roleDrafts[member.id] ?? member.role.code;
+    const roleId = roleDrafts[member.id] ?? member.role.id;
 
-    if (roleCode === member.role.code) return;
+    if (roleId === member.role.id) return;
 
     setPendingAction(`role:${member.id}`);
     setErrorMessage(null);
@@ -193,7 +268,7 @@ export function ClinicMembersManager({
         )}/members/${encodeURIComponent(member.id)}/role`,
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        data: JSON.stringify({ roleCode }),
+        data: JSON.stringify({ roleId }),
       });
 
       if (handleUnauthenticated(response)) return;
@@ -214,7 +289,7 @@ export function ClinicMembersManager({
 
       setRoleDrafts((current) => ({
         ...current,
-        [updatedMember.id]: updatedMember.role.code,
+        [updatedMember.id]: updatedMember.role.id,
       }));
 
       if (member.id === currentMembershipId) {
@@ -227,7 +302,7 @@ export function ClinicMembersManager({
     } catch (error) {
       setRoleDrafts((current) => ({
         ...current,
-        [member.id]: member.role.code,
+        [member.id]: member.role.id,
       }));
       setErrorMessage(
         error instanceof Error ? error.message : "Não foi possível alterar o perfil.",
@@ -333,28 +408,32 @@ export function ClinicMembersManager({
       id: "role",
       header: "Perfil",
       cell: (member) => {
-        const roleDraft = roleDrafts[member.id] ?? member.role.code;
+        const roleDraft = roleDrafts[member.id] ?? member.role.id;
+        const roleOptions = rolesForMembershipSelect(assignableRoles, member.role);
 
         return (
           <div className="flex min-w-64 flex-col gap-2 sm:flex-row">
             <select
               aria-label={`Perfil de ${member.user.fullName}`}
               className="border-input bg-background h-9 min-w-0 flex-1 rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              disabled={!canAssignRole || isBusy}
+              disabled={!canAssignRole || isBusy || rolesLoading}
               value={roleDraft}
               onChange={(event) => {
-                const roleCode = event.target.value;
-                if (isClinicMemberRoleCode(roleCode)) {
+                const roleId = event.target.value;
+                if (isUuid(roleId)) {
                   setRoleDrafts((current) => ({
                     ...current,
-                    [member.id]: roleCode,
+                    [member.id]: roleId,
                   }));
                 }
               }}
             >
-              {CLINIC_MEMBER_ROLES.map((role) => (
-                <option key={role.code} value={role.code}>
-                  {role.label}
+              {roleOptions.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                  {!assignableRoles.some((candidate) => candidate.id === role.id)
+                    ? " (perfil atual indisponível)"
+                    : ""}
                 </option>
               ))}
             </select>
@@ -363,7 +442,7 @@ export function ClinicMembersManager({
               <Button
                 type="button"
                 variant="outline"
-                disabled={isBusy || roleDraft === member.role.code}
+                disabled={isBusy || roleDraft === member.role.id}
                 onClick={() => void handleRoleUpdate(member)}
               >
                 {pendingAction === `role:${member.id}` ? "Salvando..." : "Salvar"}
@@ -403,11 +482,10 @@ export function ClinicMembersManager({
   ];
 
   return (
-    <main className="flex-1 p-4 sm:p-6 lg:p-8">
-      <div className="mx-auto max-w-6xl">
-        <p className="text-sm font-medium text-muted-foreground">Administração</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Usuários e perfis</h1>
-        <p className="mt-2 text-muted-foreground">
+    <section aria-labelledby="clinic-members-title">
+      <div>
+        <h2 id="clinic-members-title" className="text-xl font-semibold">Usuários e vínculos</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
           Cadastre usuários e controle seus vínculos com esta clínica.
         </p>
 
@@ -505,23 +583,27 @@ export function ClinicMembersManager({
                 <div className="space-y-2">
                   <Label htmlFor="member-role">Perfil</Label>
                   <select
-                    {...register("roleCode")}
-                    aria-invalid={!!errors.roleCode}
-                    aria-describedby={errors.roleCode ? "member-role-error" : undefined}
+                    {...register("roleId")}
+                    aria-invalid={!!errors.roleId}
+                    aria-describedby={errors.roleId ? "member-role-error" : undefined}
                     id="member-role"
+                    disabled={rolesLoading || assignableRoles.length === 0}
                     className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
-                    {CLINIC_MEMBER_ROLES.map((role) => (
-                      <option key={role.code} value={role.code}>
-                        {role.label}
+                    {assignableRoles.length === 0 ? (
+                      <option value="">Nenhum perfil atribuível</option>
+                    ) : null}
+                    {assignableRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
                       </option>
                     ))}
                   </select>
-                  <FormFieldError id="member-role-error" message={errors.roleCode?.message} />
+                  <FormFieldError id="member-role-error" message={errors.roleId?.message} />
                 </div>
 
                 <div className="md:col-span-2">
-                  <Button type="submit" disabled={isBusy}>
+                  <Button type="submit" disabled={isBusy || rolesLoading || assignableRoles.length === 0}>
                     {pendingAction === "create" ? "Cadastrando..." : "Cadastrar e vincular"}
                   </Button>
                 </div>
@@ -550,26 +632,29 @@ export function ClinicMembersManager({
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="member-role-filter">Perfil</Label>
-                <select
-                  id="member-role-filter"
-                  value={roleFilter}
-                  className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setRoleFilter(isClinicMemberRoleCode(value) ? value : "all");
-                    setPage(1);
-                  }}
-                >
-                  <option value="all">Todos</option>
-                  {CLINIC_MEMBER_ROLES.map((role) => (
-                    <option key={role.code} value={role.code}>
-                      {role.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {canAssignRole ? (
+                <div className="space-y-2">
+                  <Label htmlFor="member-role-filter">Perfil</Label>
+                  <select
+                    id="member-role-filter"
+                    value={roleFilter}
+                    disabled={rolesLoading}
+                    className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      setRoleFilter(value === "all" || isUuid(value) ? value : "all");
+                      setPage(1);
+                    }}
+                  >
+                    <option value="all">Todos</option>
+                    {assignableRoles.map((role) => (
+                      <option key={role.id} value={role.id}>
+                        {role.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : null}
 
               <div className="space-y-2">
                 <Label htmlFor="member-status-filter">Status</Label>
@@ -610,7 +695,7 @@ export function ClinicMembersManager({
               columns={columns}
               query={{
                 search: appliedSearch || undefined,
-                roleCode: roleFilter === "all" ? undefined : roleFilter,
+                roleId: roleFilter === "all" ? undefined : roleFilter,
                 isActive:
                   statusFilter === "all" ? undefined : statusFilter === "active",
               }}
@@ -631,6 +716,6 @@ export function ClinicMembersManager({
           </CardContent>
         </Card>
       </div>
-    </main>
+    </section>
   );
 }

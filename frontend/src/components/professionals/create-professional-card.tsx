@@ -34,7 +34,7 @@ import {
 
 type CreateProfessionalCardProps = {
   clinicId: string;
-  doctorOptions: ProfessionalUserOption[];
+  professionalUserOptions: ProfessionalUserOption[];
   onCreated: (professionalLink: ClinicProfessionalLink) => void;
 };
 
@@ -55,7 +55,7 @@ async function readResponseMessage(response: BrowserResponse) {
 
 export function CreateProfessionalCard({
   clinicId,
-  doctorOptions,
+  professionalUserOptions,
   onCreated,
 }: CreateProfessionalCardProps) {
   const router = useRouter();
@@ -384,8 +384,8 @@ export function CreateProfessionalCard({
             <h3 className="font-medium">Conta de acesso</h3>
 
             <p className="mt-1 text-sm text-muted-foreground">
-              A associação é opcional. Somente contas com vínculo Médico ativo
-              nesta clínica podem ser selecionadas.
+              A associação é opcional. São exibidas contas com vínculo ativo
+              nesta clínica; as permissões continuam determinadas pelo perfil de acesso.
             </p>
           </div>
 
@@ -404,7 +404,7 @@ export function CreateProfessionalCard({
             >
               <option value="">Nenhuma conta vinculada</option>
 
-              {doctorOptions.map((option) => (
+              {professionalUserOptions.map((option) => (
                 <option key={option.userId} value={option.userId}>
                   {option.fullName} — {option.email}
                 </option>
@@ -415,9 +415,9 @@ export function CreateProfessionalCard({
               message={errors.userId?.message}
             />
 
-            {doctorOptions.length === 0 ? (
+            {professionalUserOptions.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                Não há contas médicas ativas disponíveis nesta clínica.
+                Não há contas elegíveis com vínculo ativo nesta clínica.
               </p>
             ) : null}
           </div>
