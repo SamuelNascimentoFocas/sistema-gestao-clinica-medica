@@ -13,8 +13,9 @@ import {
 } from "@/lib/client/browser-api";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatAppointmentDateTime } from "@/lib/appointments/appointment-date";
@@ -28,6 +29,7 @@ import type { PatientClinicLink } from "@/types/patient";
 import { AppointmentStatusActions } from "@/components/appointments/appointment-status-actions";
 import { AppointmentRescheduleAction } from "@/components/appointments/appointment-reschedule-action";
 import type { ClinicProfessionalLink } from "@/types/professional";
+import { getCompletedAppointmentMedicalRecordHref } from "@/lib/medical-records/medical-record-entry-context";
 
 type AppointmentListItemProps = {
   clinicId: string;
@@ -38,6 +40,7 @@ type AppointmentListItemProps = {
   canEdit: boolean;
   canChangeStatus: boolean;
   canReschedule: boolean;
+  canCreateMedicalRecordEntries: boolean;
   currentTimeIso: string;
   actionsOnly?: boolean;
   onChanged?: () => void;
@@ -102,6 +105,7 @@ export function AppointmentListItem({
   canEdit,
   canChangeStatus,
   canReschedule,
+  canCreateMedicalRecordEntries,
   currentTimeIso,
   actionsOnly = false,
   onChanged,
@@ -191,6 +195,14 @@ export function AppointmentListItem({
   const isActiveAppointment =
     appointment.status === "scheduled" || appointment.status === "confirmed";
 
+  const medicalRecordHref = getCompletedAppointmentMedicalRecordHref({
+    clinicId,
+    patientId: appointment.patientClinic.patient.id,
+    appointmentId: appointment.id,
+    appointmentStatus: appointment.status,
+    canCreateMedicalRecordEntries,
+  });
+
   return (
     <article className={actionsOnly ? "min-w-56" : "rounded-lg border p-4"}>
       {!actionsOnly ? (
@@ -255,6 +267,17 @@ export function AppointmentListItem({
         <p className="mt-4 text-sm font-medium text-emerald-700" role="status">
           {successMessage}
         </p>
+      ) : null}
+
+      {medicalRecordHref ? (
+        <div className="mt-4 border-t pt-4">
+          <Link
+            href={medicalRecordHref}
+            className={buttonVariants({ variant: "outline" })}
+          >
+            Registrar no prontuário
+          </Link>
+        </div>
       ) : null}
 
       {canEdit && isActiveAppointment && !isEditing ? (

@@ -87,6 +87,8 @@ export type MedicalRecordEntryBase = {
   authorUserId: string;
   entryTypeCode: MedicalRecordEntryType;
   content: string;
+  contentFormat: string;
+  contentFormatVersion: number;
   correctsEntryId: string | null;
   createdAt: string;
 };

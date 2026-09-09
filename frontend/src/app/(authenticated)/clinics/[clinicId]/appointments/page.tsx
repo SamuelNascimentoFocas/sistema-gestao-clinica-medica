@@ -146,6 +146,11 @@ export default async function AppointmentsPage({
     ["appointments.change_status_own"],
   );
 
+  const canCreateMedicalRecordEntries = hasAnyPermission(
+    context.access.permissions,
+    ["medical_records.create"],
+  );
+
   const canRescheduleAll =
     canCreateAll &&
     canUpdateAll &&
@@ -468,6 +473,7 @@ export default async function AppointmentsPage({
               canChangeStatusOwn={canChangeStatusOwn}
               canRescheduleAll={canRescheduleAll}
               canRescheduleOwn={canRescheduleOwn}
+              canCreateMedicalRecordEntries={canCreateMedicalRecordEntries}
             />
           </CardContent>
         </Card>

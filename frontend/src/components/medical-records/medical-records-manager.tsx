@@ -33,6 +33,7 @@ import {
   type MedicalRecordTimelineResponse,
 } from "@/types/medical-record";
 import { MedicalRecordAttachmentsPanel } from "@/components/medical-records/medical-record-attachments-panel";
+import { ClinicalMarkdown } from "@/components/medical-records/clinical-markdown";
 import { MedicalRecordCorrectionForm } from "@/components/medical-records/medical-record-correction-form";
 import { MedicalRecordEntryForm } from "@/components/medical-records/medical-record-entry-form";
 
@@ -44,6 +45,8 @@ type MedicalRecordsManagerProps = {
   canCorrectEntries: boolean;
   canReadAttachments: boolean;
   canUploadAttachments: boolean;
+  initialPatientId?: string | null;
+  initialAppointmentId?: string | null;
 };
 
 function formatBirthDate(value: string) {
@@ -94,6 +97,8 @@ export function MedicalRecordsManager({
   canCorrectEntries,
   canReadAttachments,
   canUploadAttachments,
+  initialPatientId = null,
+  initialAppointmentId = null,
 }: MedicalRecordsManagerProps) {
   const router = useRouter();
 
@@ -105,7 +110,7 @@ export function MedicalRecordsManager({
   } = useForm<MedicalRecordAccessFormValues>({
     resolver: zodResolver(medicalRecordAccessFormSchema),
     defaultValues: {
-      selectedPatientId: "",
+      selectedPatientId: initialPatientId ?? "",
       purposeCode: "patient_care",
       purposeNote: "",
     },
@@ -126,6 +131,10 @@ export function MedicalRecordsManager({
     null,
   );
 
+  const [activeAppointmentId, setActiveAppointmentId] = useState<string | null>(
+    initialAppointmentId,
+  );
+
   const selectedPatientLink = useMemo(
     () =>
       patients.find(
@@ -138,6 +147,20 @@ export function MedicalRecordsManager({
     setTimeline(null);
     setErrorMessage(null);
     setCorrectingEntryId(null);
+  }
+
+  function clearAppointmentContext(patientId = selectedPatientId) {
+    setActiveAppointmentId(null);
+
+    const basePath = `/clinics/${encodeURIComponent(
+      clinicId,
+    )}/medical-records`;
+
+    router.replace(
+      patientId
+        ? `${basePath}?patientId=${encodeURIComponent(patientId)}`
+        : basePath,
+    );
   }
 
   async function loadTimeline(
@@ -226,8 +249,9 @@ export function MedicalRecordsManager({
 
                 <select
                   {...register("selectedPatientId", {
-                    onChange: () => {
+                    onChange: (event) => {
                       clearLoadedTimeline();
+                      clearAppointmentContext(event.currentTarget.value);
                     },
                   })}
                   aria-invalid={!!errors.selectedPatientId}
@@ -380,7 +404,17 @@ export function MedicalRecordsManager({
             <MedicalRecordEntryForm
               clinicId={clinicId}
               patientId={timeline.patient.id}
-              onCreated={() => loadTimeline(timeline.patient.id, 1, true)}
+              appointmentId={activeAppointmentId}
+              onClearAppointmentContext={() => {
+                clearAppointmentContext(timeline.patient.id);
+              }}
+              onCreated={async () => {
+                await loadTimeline(timeline.patient.id, 1, true);
+
+                if (activeAppointmentId) {
+                  clearAppointmentContext(timeline.patient.id);
+                }
+              }}
             />
           ) : null}
 
@@ -421,9 +455,11 @@ export function MedicalRecordsManager({
                   </CardHeader>
 
                   <CardContent>
-                    <p className="whitespace-pre-wrap text-sm leading-6">
-                      {entry.content}
-                    </p>
+                    <ClinicalMarkdown
+                      content={entry.content}
+                      contentFormat={entry.contentFormat}
+                      contentFormatVersion={entry.contentFormatVersion}
+                    />
 
                     {entry.correctsEntryId ? (
                       <p className="mt-4 text-xs text-muted-foreground">

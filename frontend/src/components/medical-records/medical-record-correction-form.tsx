@@ -147,6 +147,12 @@ export function MedicalRecordCorrectionForm({
           {content.length.toLocaleString("pt-BR")}
           /20.000 caracteres
         </p>
+
+        <p className="text-xs text-muted-foreground">
+          Formatação Markdown: use # para títulos, **texto** para negrito,
+          *texto* para itálico e - ou 1. para listas. HTML, links e imagens não
+          são renderizados.
+        </p>
       </div>
 
       {errorMessage ? (

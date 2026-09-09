@@ -3,11 +3,15 @@ import { MedicalRecordsManager } from "@/components/medical-records/medical-reco
 import { requireClinicPermissions } from "@/lib/server/clinic-authorization";
 import { getClinicPatients } from "@/lib/server/clinic-patients";
 import { hasAnyPermission } from "@/lib/auth/permissions";
+import { readOptionalUuidSearchParam } from "@/lib/medical-records/medical-record-entry-context";
+
+type SearchParams = Record<string, string | string[] | undefined>;
 
 type PageProps = {
   params: Promise<{
     clinicId: string;
   }>;
+  searchParams: Promise<SearchParams>;
 };
 
 export const metadata = {
@@ -16,8 +20,10 @@ export const metadata = {
 
 export default async function MedicalRecordsPage({
   params,
+  searchParams,
 }: PageProps) {
   const { clinicId } = await params;
+  const query = await searchParams;
 
   const context = await requireClinicPermissions(
     clinicId,
@@ -64,6 +70,16 @@ const canUploadAttachments = hasAnyPermission(
         patientLink.patient.medicalRecord !== null,
     );
 
+  const requestedPatientId = readOptionalUuidSearchParam(query.patientId);
+  const initialPatientId = availablePatients.some(
+    (patientLink) => patientLink.patient.id === requestedPatientId,
+  )
+    ? requestedPatientId
+    : null;
+  const initialAppointmentId = initialPatientId
+    ? readOptionalUuidSearchParam(query.appointmentId)
+    : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -86,6 +102,8 @@ const canUploadAttachments = hasAnyPermission(
         canCorrectEntries={canCorrectEntries}
         canReadAttachments={canReadAttachments}
         canUploadAttachments={canUploadAttachments}
+        initialPatientId={initialPatientId}
+        initialAppointmentId={initialAppointmentId}
       />
     </div>
   );

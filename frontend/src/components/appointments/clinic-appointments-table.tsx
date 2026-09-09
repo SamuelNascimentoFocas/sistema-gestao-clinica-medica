@@ -37,6 +37,7 @@ type ClinicAppointmentsTableProps = {
   canChangeStatusOwn: boolean;
   canRescheduleAll: boolean;
   canRescheduleOwn: boolean;
+  canCreateMedicalRecordEntries: boolean;
 };
 
 function statusClass(status: AppointmentStatus) {
@@ -69,6 +70,7 @@ export function ClinicAppointmentsTable({
   canChangeStatusOwn,
   canRescheduleAll,
   canRescheduleOwn,
+  canCreateMedicalRecordEntries,
 }: ClinicAppointmentsTableProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -171,6 +173,7 @@ export function ClinicAppointmentsTable({
               !isFinalStatus &&
               (canRescheduleAll || (canRescheduleOwn && isOwnAppointment))
             }
+            canCreateMedicalRecordEntries={canCreateMedicalRecordEntries}
             currentTimeIso={currentTimeIso}
             actionsOnly
             onChanged={() => setRefreshKey((current) => current + 1)}

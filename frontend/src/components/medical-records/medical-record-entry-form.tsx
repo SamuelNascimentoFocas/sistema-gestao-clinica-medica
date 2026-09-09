@@ -31,6 +31,8 @@ import { MEDICAL_RECORD_ENTRY_TYPE_OPTIONS } from "@/types/medical-record";
 type MedicalRecordEntryFormProps = {
   clinicId: string;
   patientId: string;
+  appointmentId?: string | null;
+  onClearAppointmentContext?: () => void;
   onCreated: () => Promise<void>;
 };
 
@@ -52,6 +54,8 @@ async function readResponseMessage(response: BrowserResponse) {
 export function MedicalRecordEntryForm({
   clinicId,
   patientId,
+  appointmentId = null,
+  onClearAppointmentContext,
   onCreated,
 }: MedicalRecordEntryFormProps) {
   const router = useRouter();
@@ -91,7 +95,7 @@ export function MedicalRecordEntryForm({
           "Content-Type": "application/json",
         },
         data: JSON.stringify({
-          appointmentId: null,
+          appointmentId,
           entryTypeCode,
           content: normalizedContent,
         }),
@@ -127,6 +131,9 @@ export function MedicalRecordEntryForm({
 
         <CardDescription>
           Registre uma consulta, evolução ou outra informação clínica relevante.
+          {appointmentId
+            ? " Esta entrada será vinculada à consulta concluída selecionada."
+            : ""}
         </CardDescription>
       </CardHeader>
 
@@ -199,6 +206,12 @@ export function MedicalRecordEntryForm({
               {content.length.toLocaleString("pt-BR")}
               /20.000 caracteres
             </p>
+
+            <p className="text-xs text-muted-foreground">
+              Formatação Markdown: use # para títulos, **texto** para negrito,
+              *texto* para itálico e - ou 1. para listas. HTML, links e imagens
+              não são renderizados.
+            </p>
           </div>
 
           {errorMessage ? (
@@ -213,9 +226,22 @@ export function MedicalRecordEntryForm({
             </p>
           ) : null}
 
-          <Button type="submit" disabled={isSubmitting || !content.trim()}>
-            {isSubmitting ? "Registrando..." : "Registrar entrada"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={isSubmitting || !content.trim()}>
+              {isSubmitting ? "Registrando..." : "Registrar entrada"}
+            </Button>
+
+            {appointmentId && onClearAppointmentContext ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSubmitting}
+                onClick={onClearAppointmentContext}
+              >
+                Remover vínculo com a consulta
+              </Button>
+            ) : null}
+          </div>
         </form>
       </CardContent>
     </Card>
