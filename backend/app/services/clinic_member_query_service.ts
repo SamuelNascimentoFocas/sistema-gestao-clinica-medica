@@ -24,13 +24,8 @@ export async function listClinicMembers(
     })
   }
 
-  if ('roleId' in filters && filters.roleId) {
+  if (filters.roleId) {
     query.where('role_id', filters.roleId)
-  } else if ('roleCode' in filters && filters.roleCode) {
-    const roleCode = filters.roleCode
-    query.whereHas('role', (roleQuery) => {
-      roleQuery.where('code', roleCode)
-    })
   }
 
   if (filters.isActive !== undefined) {

@@ -8,7 +8,7 @@ import {
   updateClinicMembershipValidator,
 } from '#validators/clinic_membership'
 import { isLastActiveClinicAdmin } from '#services/clinic_membership_rules'
-import { resolveRoleForAssignment, roleSelectorFromInput } from '#services/role_grant_service'
+import { resolveRoleForAssignment } from '#services/role_grant_service'
 
 async function loadRelations(membership: UserClinicRole) {
   await membership.load('user')
@@ -41,13 +41,8 @@ export default class ClinicMembershipsController {
       query.where('is_active', filters.isActive)
     }
 
-    if ('roleId' in filters && filters.roleId) {
+    if (filters.roleId) {
       query.where('role_id', filters.roleId)
-    } else if ('roleCode' in filters && filters.roleCode) {
-      const roleCode = filters.roleCode
-      query.whereHas('role', (roleQuery) => {
-        roleQuery.where('code', roleCode)
-      })
     }
 
     const memberships = await query.paginate(page, perPage)
@@ -97,7 +92,7 @@ export default class ClinicMembershipsController {
 
     const role = await resolveRoleForAssignment({
       clinicId: clinic.id,
-      selector: roleSelectorFromInput(payload),
+      roleId: payload.roleId,
       actor: {
         isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
         permissionCodes: ['*'],
@@ -160,7 +155,7 @@ export default class ClinicMembershipsController {
     const payload = await request.validateUsing(updateClinicMembershipValidator)
     const role = await resolveRoleForAssignment({
       clinicId: membership.clinicId,
-      selector: roleSelectorFromInput(payload),
+      roleId: payload.roleId,
       actor: {
         isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
         permissionCodes: ['*'],

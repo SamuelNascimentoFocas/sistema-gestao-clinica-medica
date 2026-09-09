@@ -34,6 +34,7 @@ test.group('Clinic-scoped member administration', (group) => {
       clinic,
       roleCode: 'clinic_admin',
     })
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
 
     const token = await createToken(administrator)
 
@@ -45,7 +46,7 @@ test.group('Clinic-scoped member administration', (group) => {
         fullName: 'Recepcionista Local',
         email: 'local.receptionist@example.com',
         password: 'InitialPassword!123',
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     response.assertStatus(201)
@@ -209,12 +210,13 @@ test.group('Clinic-scoped member administration', (group) => {
     })
 
     const token = await createToken(administrator)
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
     const requestedIds: string[] = []
 
     for (const page of [1, 2]) {
       const response = await client
         .get(
-          `/api/v1/clinics/${clinic.id}/members?page=${page}&perPage=1&search=FILT&roleCode=receptionist&isActive=true`
+          `/api/v1/clinics/${clinic.id}/members?page=${page}&perPage=1&search=FILT&roleId=${receptionistRole.id}&isActive=true`
         )
         .header('Accept', 'application/json')
         .header('Authorization', `Bearer ${token}`)
@@ -293,7 +295,7 @@ test.group('Clinic-scoped member administration', (group) => {
     const token = await createToken(administrator)
     const response = await client
       .get(
-        `/api/v1/clinics/${clinic.id}/members?page=1&perPage=20&roleCode=receptionist&isActive=true`
+        `/api/v1/clinics/${clinic.id}/members?page=1&perPage=20&roleId=${receptionistRole.id}&isActive=true`
       )
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
@@ -339,6 +341,45 @@ test.group('Clinic-scoped member administration', (group) => {
     invalidPaginationResponse.assertStatus(422)
   })
 
+  test('rejects legacy roleCode across clinic-scoped member inputs', async ({ client }) => {
+    const clinic = await ClinicFactory.create()
+    const administrator = await UserFactory.create()
+    const target = await UserFactory.create()
+    await createMembership({ user: administrator, clinic, roleCode: 'clinic_admin' })
+    const targetMembership = await createMembership({
+      user: target,
+      clinic,
+      roleCode: 'receptionist',
+    })
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
+    const token = await createToken(administrator)
+
+    const legacyCreate = await client
+      .post(`/api/v1/clinics/${clinic.id}/members`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Membro Legado',
+        email: 'legacy.member@example.test',
+        password: 'InitialPassword!123',
+        roleCode: 'receptionist',
+      })
+    legacyCreate.assertStatus(422)
+
+    const legacyUpdate = await client
+      .patch(`/api/v1/clinics/${clinic.id}/members/${targetMembership.id}/role`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ roleId: receptionistRole.id, roleCode: 'receptionist' })
+    legacyUpdate.assertStatus(422)
+
+    const legacyFilter = await client
+      .get(`/api/v1/clinics/${clinic.id}/members?roleCode=receptionist`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+    legacyFilter.assertStatus(422)
+  })
+
   test('updates local role and status but rejects cross-clinic access', async ({
     client,
     assert,
@@ -380,13 +421,15 @@ test.group('Clinic-scoped member administration', (group) => {
     })
 
     const token = await createToken(administrator)
+    const doctorRole = await Role.findByOrFail('code', 'doctor')
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
 
     const roleResponse = await client
       .patch(`/api/v1/clinics/${firstClinic.id}/members/${targetMembership.id}/role`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
-        roleCode: 'doctor',
+        roleId: doctorRole.id,
       })
 
     roleResponse.assertStatus(200)
@@ -408,7 +451,7 @@ test.group('Clinic-scoped member administration', (group) => {
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     crossClinicResponse.assertStatus(404)
@@ -428,6 +471,7 @@ test.group('Clinic-scoped member administration', (group) => {
     })
 
     const token = await createToken(receptionist)
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
 
     const response = await client
       .post(`/api/v1/clinics/${clinic.id}/members`)
@@ -437,7 +481,7 @@ test.group('Clinic-scoped member administration', (group) => {
         fullName: 'Usuário Indevido',
         email: 'forbidden.user@example.com',
         password: 'InitialPassword!123',
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     response.assertStatus(403)
@@ -465,13 +509,15 @@ test.group('Clinic-scoped member administration', (group) => {
 
     const clinicToken = await createToken(clinicAdmin)
     const globalToken = await createToken(globalAdmin)
+    const receptionistRole = await Role.findByOrFail('code', 'receptionist')
+    const doctorRole = await Role.findByOrFail('code', 'doctor')
 
     const localRoleResponse = await client
       .patch(`/api/v1/clinics/${clinic.id}/members/${membership.id}/role`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${clinicToken}`)
       .json({
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     localRoleResponse.assertStatus(409)
@@ -491,7 +537,7 @@ test.group('Clinic-scoped member administration', (group) => {
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${globalToken}`)
       .json({
-        roleCode: 'doctor',
+        roleId: doctorRole.id,
       })
 
     globalRoleResponse.assertStatus(409)

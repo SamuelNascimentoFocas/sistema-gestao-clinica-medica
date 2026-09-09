@@ -71,12 +71,12 @@ test.group('Clinic memberships', (group) => {
 
     const clinic = await ClinicFactory.merge({ name: 'Clínica do Vínculo' }).create()
 
-    await createRole({
+    const receptionistRole = await createRole({
       code: 'receptionist',
       name: 'Recepcionista',
     })
 
-    await createRole({
+    const doctorRole = await createRole({
       code: 'doctor',
       name: 'Médico',
     })
@@ -90,7 +90,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     createResponse.assertStatus(201)
@@ -104,7 +104,7 @@ test.group('Clinic memberships', (group) => {
 
     const listResponse = await client
       .get(
-        `/api/v1/clinic-memberships?userId=${user.id}&clinicId=${clinic.id}&roleCode=receptionist`
+        `/api/v1/clinic-memberships?userId=${user.id}&clinicId=${clinic.id}&roleId=${receptionistRole.id}`
       )
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
@@ -125,7 +125,7 @@ test.group('Clinic memberships', (group) => {
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
-        roleCode: 'doctor',
+        roleId: doctorRole.id,
       })
 
     updateResponse.assertStatus(200)
@@ -156,7 +156,7 @@ test.group('Clinic memberships', (group) => {
 
     const clinic = await ClinicFactory.merge({ name: 'Clínica de Validação' }).create()
 
-    await createRole({
+    const receptionistRole = await createRole({
       code: 'receptionist',
       name: 'Recepcionista',
     })
@@ -170,7 +170,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     firstResponse.assertStatus(201)
@@ -182,7 +182,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     duplicateResponse.assertStatus(409)
@@ -197,7 +197,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: admin.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     globalAdminResponse.assertStatus(409)
@@ -209,9 +209,47 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'invalid_role',
+        roleId: 'invalid-role-id',
       })
 
     invalidRoleResponse.assertStatus(422)
+  })
+
+  test('rejects legacy roleCode across global membership inputs', async ({ client }) => {
+    const admin = await UserFactory.apply('globalAdmin').create()
+    const user = await UserFactory.create()
+    const clinic = await ClinicFactory.create()
+    const receptionistRole = await createRole({
+      code: 'receptionist',
+      name: 'Recepcionista',
+    })
+    const token = await createBearerToken(admin)
+
+    const legacyCreate = await client
+      .post('/api/v1/clinic-memberships')
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ userId: user.id, clinicId: clinic.id, roleCode: 'receptionist' })
+    legacyCreate.assertStatus(422)
+
+    const created = await client
+      .post('/api/v1/clinic-memberships')
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ userId: user.id, clinicId: clinic.id, roleId: receptionistRole.id })
+    created.assertStatus(201)
+
+    const legacyUpdate = await client
+      .patch(`/api/v1/clinic-memberships/${created.body().membership.id}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ roleId: receptionistRole.id, roleCode: 'receptionist' })
+    legacyUpdate.assertStatus(422)
+
+    const legacyFilter = await client
+      .get('/api/v1/clinic-memberships?roleCode=receptionist')
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+    legacyFilter.assertStatus(422)
   })
 })

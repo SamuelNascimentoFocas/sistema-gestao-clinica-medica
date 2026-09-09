@@ -4,7 +4,7 @@ import db from '@adonisjs/lucid/services/db'
 import User from '#models/user'
 import { createClinicMemberValidator, listClinicMembersValidator } from '#validators/clinic_member'
 import { listClinicMembers, loadMembershipRelations } from '#services/clinic_member_query_service'
-import { resolveRoleForAssignment, roleSelectorFromInput } from '#services/role_grant_service'
+import { resolveRoleForAssignment } from '#services/role_grant_service'
 
 function passwordExceedsBcryptLimit(password: string) {
   return Buffer.byteLength(password, 'utf8') > 72
@@ -57,7 +57,7 @@ export default class ClinicMembersController {
 
     const role = await resolveRoleForAssignment({
       clinicId: clinicAuthorization.clinic.id,
-      selector: roleSelectorFromInput(payload),
+      roleId: payload.roleId,
       actor: {
         isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
         permissionCodes: clinicAuthorization.permissionCodes,

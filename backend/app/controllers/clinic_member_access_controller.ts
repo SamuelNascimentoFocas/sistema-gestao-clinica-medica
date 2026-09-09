@@ -8,7 +8,7 @@ import {
   loadScopedMembership,
   loadMembershipRelations,
 } from '#services/clinic_member_query_service'
-import { resolveRoleForAssignment, roleSelectorFromInput } from '#services/role_grant_service'
+import { resolveRoleForAssignment } from '#services/role_grant_service'
 
 export default class ClinicMemberAccessController {
   async updateRole({ auth, clinicAuthorization, params, request, response }: HttpContext) {
@@ -32,7 +32,7 @@ export default class ClinicMemberAccessController {
     const payload = await request.validateUsing(updateClinicMemberRoleValidator)
     const role = await resolveRoleForAssignment({
       clinicId: clinicAuthorization.clinic.id,
-      selector: roleSelectorFromInput(payload),
+      roleId: payload.roleId,
       actor: {
         isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
         permissionCodes: clinicAuthorization.permissionCodes,

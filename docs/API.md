@@ -279,6 +279,9 @@ Finalidade: listar vínculos entre usuários, consultórios e perfis.
 
 Finalidade: criar um vínculo global.
 
+O perfil deve ser selecionado exclusivamente por `roleId` (UUID), tanto para
+perfis do sistema quanto para perfis personalizados.
+
 ### `GET /api/v1/clinic-memberships/:id`
 
 Finalidade: consultar um vínculo.
@@ -290,6 +293,8 @@ Parâmetros:
 ### `PATCH /api/v1/clinic-memberships/:id`
 
 Finalidade: atualizar um vínculo.
+
+O novo perfil deve ser informado exclusivamente por `roleId`.
 
 ### `PATCH /api/v1/clinic-memberships/:id/status`
 
@@ -326,7 +331,7 @@ Query params opcionais:
 - `page`: página atual, com default `1`;
 - `perPage`: quantidade por página, com default `20` e máximo `100`;
 - `search`: busca textual por nome ou e-mail do usuário;
-- `roleCode`: perfil local (`clinic_admin`, `receptionist` ou `doctor`);
+- `roleId`: UUID do perfil, do sistema ou personalizado, disponível no consultório;
 - `isActive`: status do vínculo (`true` ou `false`).
 
 A resposta usa o envelope paginado do Lucid:
@@ -357,6 +362,8 @@ users.assign_role
 
 Finalidade: criar um usuário local e seu vínculo com o consultório.
 
+O perfil deve ser selecionado exclusivamente por `roleId`.
+
 ### `PATCH /api/v1/clinics/:clinicId/members/:membershipId/role`
 
 Permissões:
@@ -367,7 +374,13 @@ users.assign_role
 
 Finalidade: alterar o perfil de um membro do consultório.
 
+O novo perfil deve ser informado exclusivamente por `roleId`.
+
 A operação respeita a proteção do último administrador local efetivo.
+
+`Role.code` permanece uma identidade interna persistida dos perfis, inclusive dos
+perfis predefinidos. Ele não é aceito como seletor nas operações ou filtros de
+membership; clientes devem usar o UUID `roleId`.
 
 ### `PATCH /api/v1/clinics/:clinicId/members/:membershipId/status`
 

@@ -420,8 +420,10 @@ A navegação usa apenas os metadados numéricos `total`, `perPage`, `currentPag
 mantêm filtros na URL pública da página e preservam as conversões de data e fuso no
 Server Component. Não há sorting interativo.
 
-`GET /api/v1/clinics/:clinicId/members` passa a aceitar `page`, `perPage`, `search`,
-`roleCode` e `isActive` e retorna `{ data, meta }`. Helpers server-side que precisam
+`GET /api/v1/clinics/:clinicId/members` aceita `page`, `perPage`, `search`,
+`roleId` e `isActive` e retorna `{ data, meta }`. `roleId` é também o único seletor
+aceito nos writes de membership; `Role.code` permanece identidade interna persistida
+dos perfis predefinidos e personalizados. Helpers server-side que precisam
 de todos os membros, como as opções de vínculo profissional e o filtro de auditoria,
 percorrem todas as páginas em lotes de 100 e validam os metadados antes de avançar.
 

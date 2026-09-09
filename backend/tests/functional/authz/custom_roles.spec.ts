@@ -357,7 +357,7 @@ test.group('Clinic custom roles', (group) => {
     }
   })
 
-  test('supports roleId and legacy system roleCode with strict selector compatibility', async ({
+  test('assigns system and custom roles only by roleId and rejects legacy roleCode', async ({
     client,
     assert,
   }) => {
@@ -372,7 +372,6 @@ test.group('Clinic custom roles', (group) => {
     const payloads = [
       { roleId: customRole.id, email: 'custom.role@example.test', expected: customRole.id },
       { roleId: systemRole.id, email: 'system.id@example.test', expected: systemRole.id },
-      { roleCode: 'receptionist', email: 'legacy.code@example.test', expected: systemRole.id },
     ]
 
     for (const payload of payloads) {
@@ -384,7 +383,7 @@ test.group('Clinic custom roles', (group) => {
           fullName: 'Membro Compatível',
           email: payload.email,
           password: 'InitialPassword!123',
-          ...(payload.roleId ? { roleId: payload.roleId } : { roleCode: payload.roleCode }),
+          roleId: payload.roleId,
         })
       response.assertStatus(201)
       assert.equal(response.body().membership.roleId, payload.expected)

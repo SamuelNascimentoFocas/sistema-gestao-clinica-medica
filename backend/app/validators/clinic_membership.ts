@@ -1,5 +1,5 @@
 import vine from '@vinejs/vine'
-import { optionalRoleSelectorGroup, requiredRoleSelectorGroup } from '#validators/role_selector'
+import { optionalRoleIdGroup, requiredRoleIdGroup } from '#validators/role_selector'
 
 export const listClinicMembershipsValidator = vine.compile(
   vine
@@ -10,7 +10,7 @@ export const listClinicMembershipsValidator = vine.compile(
       clinicId: vine.string().uuid().optional(),
       isActive: vine.boolean().optional(),
     })
-    .merge(optionalRoleSelectorGroup())
+    .merge(optionalRoleIdGroup())
 )
 
 export const createClinicMembershipValidator = vine.compile(
@@ -19,11 +19,11 @@ export const createClinicMembershipValidator = vine.compile(
       userId: vine.string().uuid(),
       clinicId: vine.string().uuid(),
     })
-    .merge(requiredRoleSelectorGroup())
+    .merge(requiredRoleIdGroup())
 )
 
 export const updateClinicMembershipValidator = vine.compile(
-  vine.object({}).merge(requiredRoleSelectorGroup())
+  vine.object({}).merge(requiredRoleIdGroup())
 )
 
 export const updateClinicMembershipStatusValidator = vine.compile(

@@ -3,28 +3,9 @@ import Permission from '#models/permission'
 import Role from '#models/role'
 import { isCustomRoleAssignablePermission } from '#services/custom_role_permission_catalog'
 
-export type RoleSelector =
-  | { roleId: string; roleCode?: never }
-  | { roleCode: 'clinic_admin' | 'receptionist' | 'doctor'; roleId?: never }
-
 export type RoleGrantActor = {
   isGlobalAdmin: boolean
   permissionCodes: readonly string[]
-}
-
-export function roleSelectorFromInput(input: {
-  roleId?: string
-  roleCode?: 'clinic_admin' | 'receptionist' | 'doctor'
-}): RoleSelector {
-  if (input.roleId) {
-    return { roleId: input.roleId }
-  }
-
-  if (input.roleCode) {
-    return { roleCode: input.roleCode }
-  }
-
-  throw new Error('Validated role selector is missing')
 }
 
 export function assertPermissionSubset(actor: RoleGrantActor, requestedCodes: readonly string[]) {
@@ -103,11 +84,11 @@ export async function listCustomRoleAssignablePermissions() {
 
 export async function resolveRoleForAssignment({
   clinicId,
-  selector,
+  roleId,
   actor,
 }: {
   clinicId: string
-  selector: RoleSelector
+  roleId: string
   actor: RoleGrantActor
 }) {
   const query = Role.query()
@@ -116,15 +97,11 @@ export async function resolveRoleForAssignment({
       permissionQuery.where('is_active', true)
     })
 
-  if (selector.roleId !== undefined) {
-    query.where('id', selector.roleId).where((scopeQuery) => {
-      scopeQuery.where('is_system', true).orWhere((customQuery) => {
-        customQuery.where('is_system', false).where('clinic_id', clinicId)
-      })
+  query.where('id', roleId).where((scopeQuery) => {
+    scopeQuery.where('is_system', true).orWhere((customQuery) => {
+      customQuery.where('is_system', false).where('clinic_id', clinicId)
     })
-  } else {
-    query.where('code', selector.roleCode!).where('is_system', true)
-  }
+  })
 
   const role = await query.first()
 
