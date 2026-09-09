@@ -54,10 +54,10 @@ export async function createMedicalRecordEntry(
         )
       }
 
-      if (appointment.status === 'cancelled' || appointment.status === 'no_show') {
+      if (appointment.status !== 'completed') {
         throw new DomainError(
           'conflict',
-          'Agendamentos cancelados ou marcados como falta não podem receber entradas clínicas'
+          'Somente agendamentos realizados podem ser vinculados a entradas clínicas'
         )
       }
 
