@@ -124,6 +124,7 @@ test.group('Clinic-scoped member administration', (group) => {
       'updatedAt',
     ])
     assert.deepEqual(Object.keys(member.role).sort(), [
+      'clinicId',
       'code',
       'createdAt',
       'description',

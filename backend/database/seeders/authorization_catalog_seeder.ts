@@ -42,6 +42,11 @@ export const PERMISSIONS = [
   },
 
   {
+    code: 'roles.manage',
+    description: 'Gerenciar perfis personalizados do consultório',
+  },
+
+  {
     code: 'patients.read',
     description: 'Visualizar pacientes',
   },

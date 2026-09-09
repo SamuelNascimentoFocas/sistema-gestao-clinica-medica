@@ -115,6 +115,13 @@ const contractsFixture = {
       '/api/v1/clinics/:clinicId/members/:membershipId/status',
       permitted('users.deactivate')
     ),
+    route('GET', '/api/v1/clinics/:clinicId/roles/assignable', permitted('users.assign_role')),
+    route('GET', '/api/v1/clinics/:clinicId/roles/permissions', permitted('roles.manage')),
+    route('GET', '/api/v1/clinics/:clinicId/roles', permitted('roles.manage')),
+    route('POST', '/api/v1/clinics/:clinicId/roles', permitted('roles.manage')),
+    route('GET', '/api/v1/clinics/:clinicId/roles/:roleId', permitted('roles.manage')),
+    route('PATCH', '/api/v1/clinics/:clinicId/roles/:roleId', permitted('roles.manage')),
+    route('PATCH', '/api/v1/clinics/:clinicId/roles/:roleId/status', permitted('roles.manage')),
     route('GET', '/api/v1/clinics/:clinicId/patients', permitted('patients.read')),
     route('POST', '/api/v1/clinics/:clinicId/patients', permitted('patients.create')),
     route('GET', '/api/v1/clinics/:clinicId/patients/:patientId', permitted('patients.read')),
@@ -222,13 +229,13 @@ const contractsFixture = {
   ],
   validationRules: {
     'root GET /api/v1/clinic-memberships:query':
-      '15ddb51beb8c9a8a394bcfef1b57cf562a672176c2cfe498e0c881fdaec2f49e',
+      '2cac19522356afd91d3080bec50f085764ace2937eb62e219e196bd4469ba273',
     'root GET /api/v1/clinics/:clinicId/appointments:query':
       'd9899ea998ac0e2428aa98460fbc6afb7943c01b826c0e0cecca70cbdac72556',
     'root GET /api/v1/clinics/:clinicId/audit-logs:query':
       '2c32574ef234836c4b2b48c4d292055bfbe1ac2411eee087f35a8043bcbca37d',
     'root GET /api/v1/clinics/:clinicId/members:query':
-      'df74892863be3f6f6bd25f300c6ab182dd77e458741aca299ce505c198d3d8f5',
+      '078731acc4fcd75f654e6ac60b94b9ff2f6bd392f08e21e27269c27630b8044f',
     'root GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments/:attachmentId/download:query':
       'e30718445cbc3972e457ed7681f45c64295c55625f923d25082fd89adc61c29e',
     'root GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments:query':
@@ -248,11 +255,11 @@ const contractsFixture = {
     'root PATCH /api/v1/clinic-memberships/:id/status:body':
       'c46d433ee4ce6e09977de3cbecd885476eeba01b2b06db90d21be2555c2fa0cc',
     'root PATCH /api/v1/clinic-memberships/:id:body':
-      'c7908cfe541a0f0de3ae632f977f30d280edc754f0bba6b26332a48d50c40e5e',
+      '9c5f3652ac2056b79752211e17c6a354fe025ccd9bf6df9c238ce0af8ee31f39',
     'root PATCH /api/v1/clinics/:clinicId/appointments/:appointmentId:body':
       'dbfe25b1dadde4229e428ea7e32ef3050ab684b4587e0f2312c9aec64f473c12',
     'root PATCH /api/v1/clinics/:clinicId/members/:membershipId/role:body':
-      'c7908cfe541a0f0de3ae632f977f30d280edc754f0bba6b26332a48d50c40e5e',
+      '9c5f3652ac2056b79752211e17c6a354fe025ccd9bf6df9c238ce0af8ee31f39',
     'root PATCH /api/v1/clinics/:clinicId/members/:membershipId/status:body':
       'c46d433ee4ce6e09977de3cbecd885476eeba01b2b06db90d21be2555c2fa0cc',
     'root PATCH /api/v1/clinics/:clinicId/patients/:patientId/status:body':
@@ -271,6 +278,10 @@ const contractsFixture = {
       '56458c376d39b00580e52a3b1f8cc44094cb2c4e4d9a79ade71eb7ff43d5ad32',
     'root PATCH /api/v1/clinics/:clinicId/professionals/:professionalId:body':
       '94d36059f790a0e4ed006907c8f7c7e93435f85f3731e4d80a5e35f709ae20f6',
+    'root PATCH /api/v1/clinics/:clinicId/roles/:roleId/status:body':
+      'c568990600b572e74e0f2f213125104b41a7f0a09e0988b9e19b396d2a5b7a5d',
+    'root PATCH /api/v1/clinics/:clinicId/roles/:roleId:body':
+      '481ac941e7833b8d984c9e48bf406591585b36d8abf5b15625ba3a8c5f31dcbe',
     'root PATCH /api/v1/clinics/:id/status:body':
       'c46d433ee4ce6e09977de3cbecd885476eeba01b2b06db90d21be2555c2fa0cc',
     'root PATCH /api/v1/clinics/:id:body':
@@ -282,7 +293,7 @@ const contractsFixture = {
     'root POST /api/v1/auth/login:body':
       'd9ab1c36334474e8d943ac653526e431478882bbdc9e7b851485dbf98de34389',
     'root POST /api/v1/clinic-memberships:body':
-      'e99f463e8373465e188ee9dd03eb9676b5b7233f019632fd7fe37c4fabe02b21',
+      '57fe3ce508d9e02e7118dbb6a76544d502f65fe41f4088af9c53cbd9fac253db',
     'root POST /api/v1/clinics/:clinicId/appointments/:appointmentId/cancel:body':
       '7f81136db757c6febc64547eefd1c0a5632c11efc4affff0b9e6284473e01744',
     'root POST /api/v1/clinics/:clinicId/appointments/:appointmentId/complete:body':
@@ -296,7 +307,7 @@ const contractsFixture = {
     'root POST /api/v1/clinics/:clinicId/appointments:body':
       'b1c92d8f7aac0d407665b4632b823e8e1a2e133551efc9e365d5c39f66bc5533',
     'root POST /api/v1/clinics/:clinicId/members:body':
-      'eece6fa9274642044b7f94fc4fece9667e256318513ffa1c89403171bbcdd8a8',
+      'b25abf14b98ea99a1256bb8e747484a16890acbcfaf2649f3074187a54001ba9',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments:body':
       '06f3de8980d9ca3e6297d3f3b953771119046b6f143229e2395baefbb7ce93a3',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/corrections:body':
@@ -311,6 +322,8 @@ const contractsFixture = {
       '5f94209252ab20dcd223fbf0803861966018e34b09173bb4b153fb4a1a342e09',
     'root POST /api/v1/clinics/:clinicId/professionals:body':
       '413a1358cf67976488ddcb8a22645f5105b0f2532e06e01b26bc9187f39b7052',
+    'root POST /api/v1/clinics/:clinicId/roles:body':
+      '481ac941e7833b8d984c9e48bf406591585b36d8abf5b15625ba3a8c5f31dcbe',
     'root POST /api/v1/clinics:body':
       '1ebb9ec8352ad05377a644eac4a3d9dac994ea3943fefb3560378a9b7bd895b9',
     'root POST /api/v1/users:body':

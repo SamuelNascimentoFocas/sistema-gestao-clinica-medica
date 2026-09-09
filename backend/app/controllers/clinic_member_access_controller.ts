@@ -1,5 +1,4 @@
 import type { HttpContext } from '@adonisjs/core/http'
-import Role from '#models/role'
 import {
   updateClinicMemberRoleValidator,
   updateClinicMemberStatusValidator,
@@ -9,9 +8,10 @@ import {
   loadScopedMembership,
   loadMembershipRelations,
 } from '#services/clinic_member_query_service'
+import { resolveRoleForAssignment, roleSelectorFromInput } from '#services/role_grant_service'
 
 export default class ClinicMemberAccessController {
-  async updateRole({ clinicAuthorization, params, request, response }: HttpContext) {
+  async updateRole({ auth, clinicAuthorization, params, request, response }: HttpContext) {
     if (!clinicAuthorization) {
       return response.internalServerError({
         message: 'Contexto de autorização não inicializado',
@@ -29,15 +29,15 @@ export default class ClinicMemberAccessController {
       })
     }
 
-    const { roleCode } = await request.validateUsing(updateClinicMemberRoleValidator)
-
-    const role = await Role.query().where('code', roleCode).where('is_active', true).first()
-
-    if (!role) {
-      return response.notFound({
-        message: 'Perfil ativo não encontrado',
-      })
-    }
+    const payload = await request.validateUsing(updateClinicMemberRoleValidator)
+    const role = await resolveRoleForAssignment({
+      clinicId: clinicAuthorization.clinic.id,
+      selector: roleSelectorFromInput(payload),
+      actor: {
+        isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
+        permissionCodes: clinicAuthorization.permissionCodes,
+      },
+    })
 
     if (
       role.code !== 'clinic_admin' &&

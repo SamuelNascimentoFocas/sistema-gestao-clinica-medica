@@ -17,6 +17,7 @@ const MedicalRecordAttachmentsController = () =>
 const AuditLogsController = () => import('#controllers/audit_logs_controller')
 const UserClinicsController = () => import('#controllers/user_clinics_controller')
 const ClinicMembersController = () => import('#controllers/clinic_members_controller')
+const ClinicRolesController = () => import('#controllers/clinic_roles_controller')
 
 const AppointmentStatusController = () => import('#controllers/appointment_status_controller')
 const AppointmentReschedulingController = () =>
@@ -41,6 +42,11 @@ const ProfessionalScheduleBlocksController = () =>
 const ProfessionalLinkStatusController = () =>
   import('#controllers/professional_link_status_controller')
 const UserStatusController = () => import('#controllers/user_status_controller')
+const ClinicRoleStatusController = () => import('#controllers/clinic_role_status_controller')
+const ClinicRolePermissionsController = () =>
+  import('#controllers/clinic_role_permissions_controller')
+const AssignableClinicRolesController = () =>
+  import('#controllers/assignable_clinic_roles_controller')
 
 router.get('/', async () => {
   return {
@@ -166,6 +172,34 @@ router
               .use(
                 middleware.clinicPermission({
                   permissions: ['users.deactivate'],
+                })
+              )
+
+            router.get('/roles/assignable', [AssignableClinicRolesController, 'index']).use(
+              middleware.clinicPermission({
+                permissions: ['users.assign_role'],
+              })
+            )
+
+            router.get('/roles/permissions', [ClinicRolePermissionsController, 'index']).use(
+              middleware.clinicPermission({
+                permissions: ['roles.manage'],
+              })
+            )
+
+            router
+              .group(() => {
+                router.get('/', [ClinicRolesController, 'index'])
+                router.post('/', [ClinicRolesController, 'store'])
+                router.get('/:roleId', [ClinicRolesController, 'show'])
+                router.patch('/:roleId', [ClinicRolesController, 'update'])
+                router.patch('/:roleId/status', [ClinicRoleStatusController, 'updateStatus'])
+              })
+              .prefix('/roles')
+              .where('roleId', router.matchers.uuid())
+              .use(
+                middleware.clinicPermission({
+                  permissions: ['roles.manage'],
                 })
               )
 

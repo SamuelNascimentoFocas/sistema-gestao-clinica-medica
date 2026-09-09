@@ -1,8 +1,9 @@
 import { DateTime } from 'luxon'
-import { BaseModel, column, hasMany, manyToMany } from '@adonisjs/lucid/orm'
-import type { HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
+import { BaseModel, belongsTo, column, hasMany, manyToMany } from '@adonisjs/lucid/orm'
+import type { BelongsTo, HasMany, ManyToMany } from '@adonisjs/lucid/types/relations'
 import Permission from '#models/permission'
 import UserClinicRole from '#models/user_clinic_role'
+import Clinic from '#models/clinic'
 
 export default class Role extends BaseModel {
   static table = 'clinic.roles'
@@ -18,6 +19,9 @@ export default class Role extends BaseModel {
 
   @column()
   declare description: string | null
+
+  @column({ columnName: 'clinic_id' })
+  declare clinicId: string | null
 
   @column({ columnName: 'is_system' })
   declare isSystem: boolean
@@ -41,6 +45,11 @@ export default class Role extends BaseModel {
     pivotRelatedForeignKey: 'permission_id',
   })
   declare permissions: ManyToMany<typeof Permission>
+
+  @belongsTo(() => Clinic, {
+    foreignKey: 'clinicId',
+  })
+  declare clinic: BelongsTo<typeof Clinic>
 
   @hasMany(() => UserClinicRole, {
     foreignKey: 'roleId',

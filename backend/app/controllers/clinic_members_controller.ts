@@ -2,9 +2,9 @@ import type { HttpContext } from '@adonisjs/core/http'
 import UserClinicRole from '#models/user_clinic_role'
 import db from '@adonisjs/lucid/services/db'
 import User from '#models/user'
-import Role from '#models/role'
 import { createClinicMemberValidator, listClinicMembersValidator } from '#validators/clinic_member'
 import { listClinicMembers, loadMembershipRelations } from '#services/clinic_member_query_service'
+import { resolveRoleForAssignment, roleSelectorFromInput } from '#services/role_grant_service'
 
 function passwordExceedsBcryptLimit(password: string) {
   return Buffer.byteLength(password, 'utf8') > 72
@@ -31,7 +31,7 @@ export default class ClinicMembersController {
     })
   }
 
-  async store({ clinicAuthorization, request, response }: HttpContext) {
+  async store({ auth, clinicAuthorization, request, response }: HttpContext) {
     if (!clinicAuthorization) {
       return response.internalServerError({
         message: 'Contexto de autorização não inicializado',
@@ -55,13 +55,14 @@ export default class ClinicMembersController {
       })
     }
 
-    const role = await Role.query().where('code', payload.roleCode).where('is_active', true).first()
-
-    if (!role) {
-      return response.notFound({
-        message: 'Perfil ativo não encontrado',
-      })
-    }
+    const role = await resolveRoleForAssignment({
+      clinicId: clinicAuthorization.clinic.id,
+      selector: roleSelectorFromInput(payload),
+      actor: {
+        isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
+        permissionCodes: clinicAuthorization.permissionCodes,
+      },
+    })
 
     const membershipId = await db.transaction(async (trx) => {
       const user = new User()
