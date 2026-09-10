@@ -1,6 +1,10 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
 import { createUserValidator, listUsersValidator, updateUserValidator } from '#validators/user'
+import {
+  serializeUsersOnboardingStatus,
+  serializeUserWithLatestOnboardingStatus,
+} from '#services/user_onboarding_status_service'
 
 async function emailAlreadyExists(emailNormalized: string, exceptUserId?: string) {
   const query = User.query().where('email_normalized', emailNormalized)
@@ -44,7 +48,7 @@ export default class UsersController {
     const users = await query.paginate(page, perPage)
 
     return response.ok({
-      data: users.all().map((user) => user.serialize()),
+      data: await serializeUsersOnboardingStatus(users.all()),
       meta: users.getMeta(),
     })
   }
@@ -76,7 +80,7 @@ export default class UsersController {
     })
 
     return response.created({
-      user: user.serialize(),
+      user: await serializeUserWithLatestOnboardingStatus(user),
     })
   }
 
@@ -90,7 +94,7 @@ export default class UsersController {
     }
 
     return response.ok({
-      user: user.serialize(),
+      user: await serializeUserWithLatestOnboardingStatus(user),
     })
   }
 
@@ -144,7 +148,7 @@ export default class UsersController {
     await user.save()
 
     return response.ok({
-      user: user.serialize(),
+      user: await serializeUserWithLatestOnboardingStatus(user),
     })
   }
 }

@@ -144,6 +144,13 @@ DB_USER=clinic_app
 DB_PASSWORD=SUA_SENHA_LOCAL
 DB_DATABASE=clinic_system
 DRIVE_DISK=private_fs
+SMTP_HOST=127.0.0.1
+SMTP_PORT=1025
+SMTP_SECURE=false
+SMTP_USER=
+SMTP_PASSWORD=
+MAIL_FROM=no-reply@clinic.local
+FRONTEND_URL=http://localhost:3000
 ```
 
 Gere uma chave criptograficamente segura:
@@ -155,6 +162,10 @@ node ace generate:key
 Garanta que o valor gerado esteja definido em `APP_KEY` no arquivo `backend/.env`.
 
 Nunca versione o arquivo `.env` ou senhas reais. Os arquivos locais de ambiente estão excluídos pelo Git.
+
+Em produção, configure um servidor SMTP real e uma `FRONTEND_URL` HTTPS. `SMTP_USER` e
+`SMTP_PASSWORD` devem ser informados em conjunto. `sent_at` registra somente que o dispatch
+foi aceito pelo transporte configurado; não representa confirmação de entrega ao destinatário.
 
 ## 6. Configurar o banco de testes
 

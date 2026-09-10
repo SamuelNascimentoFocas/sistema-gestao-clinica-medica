@@ -37,4 +37,12 @@ export default await Env.create(new URL('../', import.meta.url), {
   DRIVE_DISK: Env.schema.enum(['private_fs'] as const),
 
   MEDICAL_RECORD_ATTACHMENT_MAX_BYTES: Env.schema.number.optional(),
+
+  SMTP_HOST: Env.schema.string.optional({ format: 'host' }),
+  SMTP_PORT: Env.schema.number.optional(),
+  SMTP_SECURE: Env.schema.boolean.optional(),
+  SMTP_USER: Env.schema.string.optional(),
+  SMTP_PASSWORD: Env.schema.string.optional(),
+  MAIL_FROM: Env.schema.string.optional(),
+  FRONTEND_URL: Env.schema.string.optional(),
 })

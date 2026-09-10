@@ -487,13 +487,13 @@ function endpointValidationContracts(
 }
 
 test(
-  'preserves all 66 public routes, middleware configurations, and UUID matchers',
+  'preserves all 72 public routes, middleware configurations, and UUID matchers',
   { timeout: 15_000 },
   async () => {
     const audit = await registeredRoutes()
 
-    assert.equal(contractsFixture.routes.length, 66)
-    assert.equal(audit.routes.length, 66)
+    assert.equal(contractsFixture.routes.length, 72)
+    assert.equal(audit.routes.length, 72)
     assert.deepEqual(audit.issues, [])
     assert.deepEqual(audit.routes, sortRoutes(contractsFixture.routes))
   }

@@ -561,9 +561,25 @@ Campos relevantes:
 
 - nome;
 - e-mail;
-- hash de senha;
+- hash de senha, nulo somente enquanto o convite inicial não foi aceito;
 - status ativo;
 - indicador de administrador global.
+
+### Convite e definição inicial de senha
+
+O onboarding usa um registro separado em `clinic.user_invitation_tokens`. O token aleatório
+de 256 bits existe em claro somente na composição do e-mail; o banco armazena seu digest
+SHA-256. Convites expiram em 24 horas, são de uso único e mantêm no máximo um registro
+pendente por usuário.
+
+A criação ou reemissão confirma primeiro a transação PostgreSQL e só depois realiza o
+dispatch SMTP. Falha de transporte preserva o estado recuperável para um reenvio. O aceite
+bloqueia usuário e convite, grava o hash bcrypt e consome o token na mesma transação. Uma
+conta sem `password_hash` segue indistinguível de credenciais inválidas no login.
+
+O estado `is_active` permanece uma decisão administrativa independente da aceitação do
+convite. Convites não criam Professional, não concedem Global Admin e, quando criam vínculo,
+passam pelo mesmo `RoleGrantService` usado pelas demais atribuições.
 
 ### Vínculo local
 

@@ -191,6 +191,20 @@ Autenticação: obrigatória.
 
 Finalidade: encerrar a sessão atual.
 
+### `POST /api/v1/invitations/validate`
+
+Autenticação: não exigida.
+
+Finalidade: validar, sem consumir, um token de convite recebido exclusivamente no corpo.
+Tokens inválidos, expirados, revogados ou consumidos recebem a mesma resposta pública.
+
+### `POST /api/v1/invitations/accept`
+
+Autenticação: não exigida.
+
+Finalidade: definir e confirmar a senha inicial, consumir o convite em uso único e então
+permitir que o usuário utilize o login normal. Não cria sessão automaticamente.
+
 ---
 
 ## Consultórios — administração global
@@ -242,6 +256,20 @@ Finalidade: listar usuários.
 ### `POST /api/v1/users`
 
 Finalidade: criar um usuário.
+
+Este contrato com senha administrativa permanece temporariamente compatível durante a
+transição do frontend e será removido no fechamento da Fase 12.7.
+
+### `POST /api/v1/users/invitations`
+
+Finalidade: criar um usuário sem senha e enviar um convite. Pode receber vínculos por
+`clinicId` + `roleId`; as mesmas regras de escopo e concessão de perfil são aplicadas.
+A resposta contém somente status seguro do onboarding, nunca token ou digest.
+
+### `POST /api/v1/users/:userId/invitations/resend`
+
+Finalidade: revogar o convite pendente e enviar um novo convite para usuário ativo que
+ainda não configurou senha. Não altera vínculos, perfis ou status do usuário.
 
 ### `GET /api/v1/users/:id`
 
@@ -363,6 +391,32 @@ users.assign_role
 Finalidade: criar um usuário local e seu vínculo com o consultório.
 
 O perfil deve ser selecionado exclusivamente por `roleId`.
+
+Este contrato com senha administrativa permanece temporariamente compatível durante a
+transição do frontend.
+
+### `POST /api/v1/clinics/:clinicId/members/invitations`
+
+Permissões exigidas em conjunto:
+
+```text
+users.create
+users.assign_role
+```
+
+Finalidade: criar usuário sem senha, vínculo local por `roleId` e convite. A senha não é
+aceita neste endpoint e o `RoleGrantService` continua sendo a autoridade da atribuição.
+
+### `POST /api/v1/clinics/:clinicId/members/:membershipId/invitations/resend`
+
+Permissão:
+
+```text
+users.create
+```
+
+Finalidade: reenviar convite para o usuário do vínculo pertencente ao consultório. Não
+altera o vínculo nem o perfil.
 
 ### `PATCH /api/v1/clinics/:clinicId/members/:membershipId/role`
 

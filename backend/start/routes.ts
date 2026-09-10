@@ -18,6 +18,10 @@ const AuditLogsController = () => import('#controllers/audit_logs_controller')
 const UserClinicsController = () => import('#controllers/user_clinics_controller')
 const ClinicMembersController = () => import('#controllers/clinic_members_controller')
 const ClinicRolesController = () => import('#controllers/clinic_roles_controller')
+const InvitationsController = () => import('#controllers/invitations_controller')
+const UserInvitationsController = () => import('#controllers/user_invitations_controller')
+const ClinicMemberInvitationsController = () =>
+  import('#controllers/clinic_member_invitations_controller')
 
 const AppointmentStatusController = () => import('#controllers/appointment_status_controller')
 const AppointmentReschedulingController = () =>
@@ -64,6 +68,13 @@ router
       })
       .prefix('/auth')
 
+    router
+      .group(() => {
+        router.post('/validate', [InvitationsController, 'validate'])
+        router.post('/accept', [InvitationsController, 'accept'])
+      })
+      .prefix('/invitations')
+
     // Todas as demais rotas da API exigem autenticação.
     router
       .group(() => {
@@ -99,6 +110,11 @@ router
               .group(() => {
                 router.get('/', [UsersController, 'index'])
                 router.post('/', [UsersController, 'store'])
+                router.post('/invitations', [UserInvitationsController, 'store'])
+
+                router
+                  .post('/:userId/invitations/resend', [UserInvitationsController, 'resend'])
+                  .where('userId', router.matchers.uuid())
 
                 router.get('/:id', [UsersController, 'show']).where('id', router.matchers.uuid())
 
@@ -153,6 +169,24 @@ router
                 permissions: ['users.create', 'users.assign_role'],
               })
             )
+
+            router.post('/members/invitations', [ClinicMemberInvitationsController, 'store']).use(
+              middleware.clinicPermission({
+                permissions: ['users.create', 'users.assign_role'],
+              })
+            )
+
+            router
+              .post('/members/:membershipId/invitations/resend', [
+                ClinicMemberInvitationsController,
+                'resend',
+              ])
+              .where('membershipId', router.matchers.uuid())
+              .use(
+                middleware.clinicPermission({
+                  permissions: ['users.create'],
+                })
+              )
 
             router
               .patch('/members/:membershipId/role', [ClinicMemberAccessController, 'updateRole'])

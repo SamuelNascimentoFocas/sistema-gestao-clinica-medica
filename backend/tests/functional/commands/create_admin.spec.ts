@@ -52,7 +52,7 @@ test.group('Command admin:create', (group) => {
     assert.isTrue(user.isActive)
     assert.notEqual(user.passwordHash, plainPassword)
 
-    const passwordIsValid = await hash.use('bcrypt').verify(user.passwordHash, plainPassword)
+    const passwordIsValid = await hash.use('bcrypt').verify(user.passwordHash!, plainPassword)
 
     assert.isTrue(passwordIsValid)
   })
