@@ -1,4 +1,5 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
+import { authenticatedInvitationBackendJson } from "@/lib/server/authenticated-invitation-backend";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
 import { isUuid, parseRoleIdPayload } from "@/lib/administration/role-contract";
 
@@ -128,9 +129,14 @@ export async function POST(
     typeof body.fullName === "string" ? body.fullName.trim() : "";
   const email =
     typeof body.email === "string" ? body.email.trim() : "";
-  const password =
-    typeof body.password === "string" ? body.password : "";
   const roleResult = parseRoleIdPayload(body);
+
+  if ("password" in body || "passwordConfirmation" in body) {
+    return Response.json(
+      { message: "A senha deve ser definida pelo usuário através do convite" },
+      { status: 422 },
+    );
+  }
 
   if (fullName.length < 3 || fullName.length > 180) {
     return Response.json(
@@ -157,24 +163,6 @@ export async function POST(
     );
   }
 
-  const passwordBytes = new TextEncoder().encode(password).length;
-
-  if (
-    password.length < 12 ||
-    password.length > 72 ||
-    passwordBytes > 72
-  ) {
-    return Response.json(
-      {
-        message:
-          "A senha deve possuir ao menos 12 caracteres e no máximo 72 bytes",
-      },
-      {
-        status: 422,
-      },
-    );
-  }
-
   if (!roleResult.ok) {
     return Response.json({ message: roleResult.message }, { status: roleResult.status });
   }
@@ -184,14 +172,13 @@ export async function POST(
     return Response.json({ message: "Clínica inválida" }, { status: 422 });
   }
 
-  return authenticatedBackendJson(
-    `/api/v1/clinics/${encodeURIComponent(clinicId)}/members`,
+  return authenticatedInvitationBackendJson(
+    `/api/v1/clinics/${encodeURIComponent(clinicId)}/members/invitations`,
     {
       method: "POST",
       body: JSON.stringify({
         fullName,
         email,
-        password,
         roleId: roleResult.value.roleId,
       }),
     },

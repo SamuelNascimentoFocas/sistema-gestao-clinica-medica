@@ -36,6 +36,7 @@ export default async function AdministrationPage({
       }
       canReadMembers={hasAnyPermission(permissions, ["users.read"])}
       canCreateMembers={canCreate}
+      canResendInvitations={hasAnyPermission(permissions, ["users.create"])}
       canAssignRole={hasAnyPermission(
         permissions,
         ["users.assign_role"],

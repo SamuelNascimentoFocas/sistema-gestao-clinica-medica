@@ -56,6 +56,7 @@ type RemoteDataTableProps<TData extends RowData> = {
   emptyDescription: string;
   loadingLabel?: string;
   invalidResponseMessage?: string;
+  parseResponse?: (value: unknown) => PaginatedResponse<TData> | null;
 };
 
 async function responseMessage(response: BrowserResponse) {
@@ -87,6 +88,7 @@ export function RemoteDataTable<TData extends RowData>({
   emptyDescription,
   loadingLabel = "Carregando...",
   invalidResponseMessage = "O servidor retornou uma lista inválida",
+  parseResponse = parseRemoteDataTableResponse<TData>,
 }: RemoteDataTableProps<TData>) {
   const [response, setResponse] = useState<PaginatedResponse<TData> | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -121,7 +123,7 @@ export function RemoteDataTable<TData extends RowData>({
         }
 
         const body = await readBrowserJson(request);
-        const parsed = parseRemoteDataTableResponse<TData>(body);
+        const parsed = parseResponse(body);
 
         if (!parsed) {
           setErrorMessage(invalidResponseMessage);
@@ -151,7 +153,7 @@ export function RemoteDataTable<TData extends RowData>({
     void load();
 
     return () => controller.abort();
-  }, [invalidResponseMessage, onPageChange, page, refreshKey, requestUrl, retryKey]);
+  }, [invalidResponseMessage, onPageChange, page, parseResponse, refreshKey, requestUrl, retryKey]);
 
   const tableColumns = useMemo(
     () => {

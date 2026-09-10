@@ -27,14 +27,26 @@ export const loginFormSchema = z.object({
 export const memberFormSchema = z.object({
   fullName: text(180).min(3, "Use ao menos 3 caracteres."),
   email: email.and(requiredText).and(text(254)),
-  password: text(72)
-    .min(12, "Use ao menos 12 caracteres.")
-    .refine(
-      (value) => new TextEncoder().encode(value).length <= 72,
-      "A senha ultrapassa o limite de 72 bytes.",
-    ),
   roleId: z.string().uuid("Selecione um perfil válido."),
 });
+
+const invitationPassword = z
+  .string()
+  .min(12, "Use ao menos 12 caracteres.")
+  .refine(
+    (value) => new TextEncoder().encode(value).length <= 72,
+    "A senha ultrapassa o limite de 72 bytes.",
+  );
+
+export const invitationPasswordFormSchema = z
+  .object({
+    password: invitationPassword,
+    passwordConfirmation: invitationPassword,
+  })
+  .refine(({ password, passwordConfirmation }) => password === passwordConfirmation, {
+    path: ["passwordConfirmation"],
+    message: "As senhas devem ser iguais.",
+  });
 
 export const customRoleFormSchema = z.object({
   name: z
@@ -48,6 +60,9 @@ export const customRoleFormSchema = z.object({
 
 export type LoginFormValues = z.infer<typeof loginFormSchema>;
 export type MemberFormValues = z.infer<typeof memberFormSchema>;
+export type InvitationPasswordFormValues = z.infer<
+  typeof invitationPasswordFormSchema
+>;
 export type CustomRoleFormValues = z.infer<typeof customRoleFormSchema>;
 
 // Create/edit intentionally submit the same complete set of browser fields.

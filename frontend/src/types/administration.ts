@@ -1,6 +1,21 @@
 import type { AuthUser } from "@/types/auth";
 import type { PaginationMeta } from "@/types/pagination";
 
+export type InvitationStatus =
+  | "not_invited"
+  | "accepted"
+  | "revoked"
+  | "expired"
+  | "sent"
+  | "pending_dispatch";
+
+export type ClinicMemberUser = AuthUser & {
+  passwordConfigured: boolean;
+  invitationStatus: InvitationStatus;
+  invitationSentAt: string | null;
+  invitationExpiresAt: string | null;
+};
+
 export type ClinicRolePermission = {
   id: string;
   code: string;
@@ -26,7 +41,7 @@ export type ClinicRole = ClinicRoleSummary & {
   permissions: ClinicRolePermission[];
 };
 
-export type ClinicMember = {
+type ClinicMemberWithUser<TUser extends AuthUser> = {
   id: string;
   userId: string;
   clinicId: string;
@@ -34,9 +49,12 @@ export type ClinicMember = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  user: AuthUser;
+  user: TUser;
   role: ClinicRoleSummary;
 };
+
+export type ClinicMember = ClinicMemberWithUser<ClinicMemberUser>;
+export type ClinicMemberMutation = ClinicMemberWithUser<AuthUser>;
 
 export type ClinicMembersResponse = {
   data: ClinicMember[];
@@ -44,7 +62,7 @@ export type ClinicMembersResponse = {
 };
 
 export type ClinicMemberResponse = {
-  membership: ClinicMember;
+  membership: ClinicMemberMutation;
 };
 
 export type ClinicRolesResponse = {

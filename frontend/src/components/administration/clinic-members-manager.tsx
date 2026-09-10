@@ -28,7 +28,14 @@ import {
   rolesForMembershipSelect,
 } from "@/lib/administration/role-contract";
 import {
+  canResendInvitation,
+  invitationStatusLabel,
+  parseClinicMembersResponse,
+  parseInvitedUserResponse,
+} from "@/lib/invitations/invitation-contract";
+import {
   type ClinicMember,
+  type ClinicMemberMutation,
   type ClinicMemberResponse,
   type ClinicRole,
 } from "@/types/administration";
@@ -37,6 +44,7 @@ type ClinicMembersManagerProps = {
   clinicId: string;
   currentMembershipId: string | null;
   canCreate: boolean;
+  canResendInvitations: boolean;
   canAssignRole: boolean;
   canChangeStatus: boolean;
   assignableRolesRefreshKey: number;
@@ -47,7 +55,6 @@ type MemberStatusFilter = "all" | "active" | "inactive";
 const INITIAL_FORM: MemberFormValues = {
   fullName: "",
   email: "",
-  password: "",
   roleId: "",
 };
 
@@ -64,7 +71,7 @@ function getResponseMessage(body: unknown, fallback: string) {
   return fallback;
 }
 
-function getMembership(body: unknown): ClinicMember | null {
+function getMembership(body: unknown): ClinicMemberMutation | null {
   if (
     typeof body !== "object" ||
     body === null ||
@@ -75,7 +82,7 @@ function getMembership(body: unknown): ClinicMember | null {
     return null;
   }
 
-  const membership = body.membership as Partial<ClinicMember>;
+  const membership = body.membership as Partial<ClinicMemberMutation>;
 
   if (
     typeof membership.id !== "string" ||
@@ -94,6 +101,7 @@ export function ClinicMembersManager({
   clinicId,
   currentMembershipId,
   canCreate,
+  canResendInvitations,
   canAssignRole,
   canChangeStatus,
   assignableRolesRefreshKey,
@@ -225,12 +233,12 @@ export function ClinicMembersManager({
 
       if (!isSuccessfulResponse(response)) {
         throw new Error(
-          getResponseMessage(body, "Não foi possível cadastrar o usuário."),
+          getResponseMessage(body, "Não foi possível convidar o usuário."),
         );
       }
 
-      if (!getMembership(body)) {
-        throw new Error("O servidor retornou um vínculo inválido.");
+      if (!parseInvitedUserResponse(body)) {
+        throw new Error("O servidor retornou um convite inválido.");
       }
 
       reset({ ...INITIAL_FORM, roleId: assignableRoles[0]?.id ?? "" });
@@ -240,12 +248,51 @@ export function ClinicMembersManager({
       setStatusFilter("all");
       setPage(1);
       reloadMembers();
-      setSuccessMessage("Usuário cadastrado e vinculado à clínica.");
+      setSuccessMessage("Usuário convidado e vinculado à clínica.");
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Não foi possível cadastrar o usuário.",
+          : "Não foi possível convidar o usuário.",
+      );
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function handleInvitationResend(member: ClinicMember) {
+    setPendingAction(`resend:${member.id}`);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    try {
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
+          clinicId,
+        )}/members/${encodeURIComponent(member.id)}/invitations/resend`,
+        method: "POST",
+      });
+
+      if (handleUnauthenticated(response)) return;
+
+      const body = await readResponse(response);
+      if (!isSuccessfulResponse(response)) {
+        throw new Error(
+          getResponseMessage(body, "Não foi possível reenviar o convite."),
+        );
+      }
+
+      if (!parseInvitedUserResponse(body)) {
+        throw new Error("O servidor retornou um convite inválido.");
+      }
+
+      reloadMembers();
+      setSuccessMessage("Novo convite enviado.");
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível reenviar o convite.",
       );
     } finally {
       setPendingAction(null);
@@ -401,6 +448,20 @@ export function ClinicMembersManager({
         <div className="space-y-1 whitespace-nowrap text-xs">
           <p>Vínculo: {member.isActive ? "ativo" : "inativo"}</p>
           <p>Usuário: {member.user.isActive ? "ativo" : "inativo"}</p>
+          <p>
+            Senha: {member.user.passwordConfigured ? "configurada" : "não configurada"}
+          </p>
+          <p>{invitationStatusLabel(member.user.invitationStatus)}</p>
+          {member.user.invitationSentAt ? (
+            <p>
+              Enviado em {new Date(member.user.invitationSentAt).toLocaleString("pt-BR")}
+            </p>
+          ) : null}
+          {member.user.invitationExpiresAt && !member.user.passwordConfigured ? (
+            <p>
+              Expira em {new Date(member.user.invitationExpiresAt).toLocaleString("pt-BR")}
+            </p>
+          ) : null}
         </div>
       ),
     },
@@ -456,28 +517,49 @@ export function ClinicMembersManager({
       id: "actions",
       header: "Ações",
       className: "w-px",
-      cell: (member) =>
-        canChangeStatus ? (
-          <div>
-            <Button
-              type="button"
-              variant={member.isActive ? "destructive" : "outline"}
-              disabled={isBusy || (!member.isActive && !member.user.isActive)}
-              onClick={() => void handleStatusUpdate(member)}
-            >
-              {pendingAction === `status:${member.id}`
-                ? "Salvando..."
-                : member.isActive
-                  ? "Inativar"
-                  : "Ativar"}
-            </Button>
+      cell: (member) => {
+        const showResend =
+          canResendInvitations && canResendInvitation(member.user);
+
+        if (!canChangeStatus && !showResend) return null;
+
+        return (
+          <div className="space-y-2">
+            {showResend ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isBusy}
+                onClick={() => void handleInvitationResend(member)}
+              >
+                {pendingAction === `resend:${member.id}`
+                  ? "Reenviando..."
+                  : "Reenviar convite"}
+              </Button>
+            ) : null}
+
+            {canChangeStatus ? (
+              <Button
+                type="button"
+                variant={member.isActive ? "destructive" : "outline"}
+                disabled={isBusy || (!member.isActive && !member.user.isActive)}
+                onClick={() => void handleStatusUpdate(member)}
+              >
+                {pendingAction === `status:${member.id}`
+                  ? "Salvando..."
+                  : member.isActive
+                    ? "Inativar"
+                    : "Ativar"}
+              </Button>
+            ) : null}
             {!member.user.isActive ? (
               <p className="mt-2 max-w-48 text-xs text-muted-foreground">
                 O vínculo depende da ativação global do usuário.
               </p>
             ) : null}
           </div>
-        ) : null,
+        );
+      },
     },
   ];
 
@@ -486,7 +568,7 @@ export function ClinicMembersManager({
       <div>
         <h2 id="clinic-members-title" className="text-xl font-semibold">Usuários e vínculos</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cadastre usuários e controle seus vínculos com esta clínica.
+          Convide usuários e controle seus vínculos com esta clínica. Cada usuário define a própria senha.
         </p>
 
         <div aria-live="polite" className="mt-6 space-y-3">
@@ -508,7 +590,7 @@ export function ClinicMembersManager({
         {canCreate ? (
           <Card className="mt-6">
             <CardHeader>
-              <CardTitle>Cadastrar usuário</CardTitle>
+              <CardTitle>Convidar usuário</CardTitle>
             </CardHeader>
             <CardContent>
               <form
@@ -558,29 +640,6 @@ export function ClinicMembersManager({
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="member-password">Senha inicial</Label>
-                  <Controller
-                    control={control}
-                    name="password"
-                    render={({ field }) => (
-                      <Input
-                        {...field}
-                        aria-invalid={!!errors.password}
-                        aria-describedby={errors.password ? "member-password-error" : undefined}
-                        id="member-password"
-                        type="password"
-                        autoComplete="new-password"
-                        required
-                        minLength={12}
-                        maxLength={72}
-                      />
-                    )}
-                  />
-                  <FormFieldError id="member-password-error" message={errors.password?.message} />
-                  <p className="text-xs text-muted-foreground">Use ao menos 12 caracteres.</p>
-                </div>
-
-                <div className="space-y-2">
                   <Label htmlFor="member-role">Perfil</Label>
                   <select
                     {...register("roleId")}
@@ -604,7 +663,7 @@ export function ClinicMembersManager({
 
                 <div className="md:col-span-2">
                   <Button type="submit" disabled={isBusy || rolesLoading || assignableRoles.length === 0}>
-                    {pendingAction === "create" ? "Cadastrando..." : "Cadastrar e vincular"}
+                    {pendingAction === "create" ? "Enviando convite..." : "Convidar e vincular"}
                   </Button>
                 </div>
               </form>
@@ -701,6 +760,7 @@ export function ClinicMembersManager({
               }}
               page={page}
               refreshKey={refreshKey}
+              parseResponse={parseClinicMembersResponse}
               getRowId={(member) => member.id}
               onPageChange={setPage}
               summary={(meta) =>

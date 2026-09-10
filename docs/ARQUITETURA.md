@@ -581,6 +581,13 @@ O estado `is_active` permanece uma decisão administrativa independente da aceit
 convite. Convites não criam Professional, não concedem Global Admin e, quando criam vínculo,
 passam pelo mesmo `RoleGrantService` usado pelas demais atribuições.
 
+No frontend, o link abre `/accept-invitation#token=...`. Um Client Component lê o fragmento,
+remove-o imediatamente do histórico e mantém o token apenas em memória. Validação e aceite
+seguem por `POST` no BFF Next.js, com `Cache-Control: no-store` e
+`Referrer-Policy: no-referrer`; o navegador nunca chama o AdonisJS diretamente. Na administração da clínica,
+a criação usa o endpoint de convite sem senha, mostra separadamente habilitação da conta,
+senha configurada e estado do convite, e permite reenvio sem alterar vínculo ou perfil.
+
 ### Vínculo local
 
 A tabela de vínculo associa:

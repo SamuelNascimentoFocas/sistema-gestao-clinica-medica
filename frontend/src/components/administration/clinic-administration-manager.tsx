@@ -9,6 +9,7 @@ type ClinicAdministrationManagerProps = {
   currentMembershipId: string | null;
   canReadMembers: boolean;
   canCreateMembers: boolean;
+  canResendInvitations: boolean;
   canAssignRole: boolean;
   canChangeMemberStatus: boolean;
   canManageRoles: boolean;
@@ -19,6 +20,7 @@ export function ClinicAdministrationManager({
   currentMembershipId,
   canReadMembers,
   canCreateMembers,
+  canResendInvitations,
   canAssignRole,
   canChangeMemberStatus,
   canManageRoles,
@@ -43,6 +45,7 @@ export function ClinicAdministrationManager({
             clinicId={clinicId}
             currentMembershipId={currentMembershipId}
             canCreate={canCreateMembers}
+            canResendInvitations={canResendInvitations}
             canAssignRole={canAssignRole}
             canChangeStatus={canChangeMemberStatus}
             assignableRolesRefreshKey={rolesRevision}

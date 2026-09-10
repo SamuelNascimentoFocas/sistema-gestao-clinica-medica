@@ -3,6 +3,13 @@ import type { NextRequest } from "next/server";
 import { AUTH_COOKIE_NAME } from "@/lib/auth/constants";
 
 export function proxy(request: NextRequest) {
+  if (request.nextUrl.pathname === "/accept-invitation") {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "no-store");
+    response.headers.set("Referrer-Policy", "no-referrer");
+    return response;
+  }
+
   const hasSessionCookie = request.cookies.has(AUTH_COOKIE_NAME);
 
   if (!hasSessionCookie) {
@@ -18,5 +25,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/clinics/:path*"],
+  matcher: ["/accept-invitation", "/dashboard/:path*", "/clinics/:path*"],
 };

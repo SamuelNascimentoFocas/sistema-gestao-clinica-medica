@@ -9,6 +9,7 @@ import {
 import {
   loginFormSchema,
   memberFormSchema,
+  invitationPasswordFormSchema,
   customRoleFormSchema,
   patientFormSchema,
   professionalFormSchema,
@@ -45,18 +46,15 @@ test("login keeps the HTML email grammar and does not add a password limit", () 
   );
 });
 
-test("member validation preserves lengths, roles and the existing 72-byte password rule", () => {
+test("member invitation validation accepts identity and role without an administrator password", () => {
   const roleId = "11111111-1111-4111-8111-111111111111";
   const values = {
     fullName: "  Ana  ",
     email: "ana!teste@example.com",
-    password: "á".repeat(36),
     roleId,
   };
   assert.deepEqual(memberFormSchema.parse(values), values);
   for (const change of [
-    { password: "á".repeat(37) },
-    { password: "x".repeat(11) },
     { roleId: "invalid-role" },
     { fullName: "AB" },
   ]) {
@@ -73,7 +71,6 @@ test("the Zod resolver returns unchanged valid values and accessible field error
   const values = {
     fullName: "  Ana  ",
     email: "ana@example.com",
-    password: "a".repeat(12),
     roleId: "22222222-2222-4222-8222-222222222222",
   };
   assert.deepEqual(await resolver(values, undefined, options), {
@@ -81,15 +78,50 @@ test("the Zod resolver returns unchanged valid values and accessible field error
     errors: {},
   });
   const invalid = await resolver(
-    { ...values, password: "á".repeat(37) },
+    { ...values, roleId: "invalid" },
     undefined,
     options,
   );
   assert.deepEqual(invalid.values, {});
   assert.equal(
-    invalid.errors.password.message,
-    "A senha ultrapassa o limite de 72 bytes.",
+    invalid.errors.roleId.message,
+    "Selecione um perfil válido.",
   );
+});
+
+test("invitation password validation enforces characters, UTF-8 bytes and confirmation", () => {
+  const accepted = [
+    "a".repeat(12),
+    "a".repeat(72),
+    "á".repeat(30),
+    `${"á".repeat(30)}${"a".repeat(12)}`,
+  ];
+
+  for (const password of accepted) {
+    assert.deepEqual(invitationPasswordFormSchema.parse({
+      password,
+      passwordConfirmation: password,
+    }), {
+      password,
+      passwordConfirmation: password,
+    });
+  }
+
+  for (const password of [
+    "a".repeat(11),
+    "a".repeat(73),
+    "á".repeat(37),
+  ]) {
+    assert.equal(invitationPasswordFormSchema.safeParse({
+      password,
+      passwordConfirmation: password,
+    }).success, false);
+  }
+
+  assert.equal(invitationPasswordFormSchema.safeParse({
+    password: "a".repeat(12),
+    passwordConfirmation: "b".repeat(12),
+  }).success, false);
 });
 
 test("custom role validation keeps the backend name and description limits", () => {
