@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { test } from '@japa/runner'
+import mail from '@adonisjs/mail/services/main'
 import { ClinicFactory } from '#database/factories/clinic_factory'
 import { MedicalRecordFactory } from '#database/factories/medical_record_factory'
 import { PatientClinicFactory } from '#database/factories/patient_clinic_factory'
@@ -7,6 +8,7 @@ import { PatientFactory } from '#database/factories/patient_factory'
 import { UserFactory } from '#database/factories/user_factory'
 import Permission from '#models/permission'
 import Role from '#models/role'
+import UserClinicRole from '#models/user_clinic_role'
 import { createBearerToken } from '#tests/helpers/auth'
 import { createMembership } from '#tests/helpers/membership'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
@@ -52,8 +54,10 @@ test.group('Clinic custom roles', (group) => {
   group.each.setup(async () => {
     await truncateClinicSchemaTables()
     await seedAuthorizationCatalog()
+    mail.fake()
 
     return async () => {
+      mail.restore()
       await truncateClinicSchemaTables()
     }
   })
@@ -357,7 +361,7 @@ test.group('Clinic custom roles', (group) => {
     }
   })
 
-  test('assigns system and custom roles only by roleId and rejects legacy roleCode', async ({
+  test('assigns system and custom roles by roleId through invitations', async ({
     client,
     assert,
   }) => {
@@ -376,36 +380,30 @@ test.group('Clinic custom roles', (group) => {
 
     for (const payload of payloads) {
       const response = await client
-        .post(`/api/v1/clinics/${clinic.id}/members`)
+        .post(`/api/v1/clinics/${clinic.id}/members/invitations`)
         .header('Accept', 'application/json')
         .header('Authorization', `Bearer ${token}`)
         .json({
           fullName: 'Membro Compatível',
           email: payload.email,
-          password: 'InitialPassword!123',
           roleId: payload.roleId,
         })
       response.assertStatus(201)
-      assert.equal(response.body().membership.roleId, payload.expected)
+      const membership = await UserClinicRole.query()
+        .where('user_id', response.body().user.id)
+        .firstOrFail()
+      assert.equal(membership.roleId, payload.expected)
     }
 
-    for (const selector of [
-      {},
-      { roleId: customRole.id, roleCode: 'doctor' },
-      { roleCode: customRole.code },
-    ]) {
-      const response = await client
-        .post(`/api/v1/clinics/${clinic.id}/members`)
-        .header('Accept', 'application/json')
-        .header('Authorization', `Bearer ${token}`)
-        .json({
-          fullName: 'Membro Inválido',
-          email: `${randomUUID()}@example.test`,
-          password: 'InitialPassword!123',
-          ...selector,
-        })
-      response.assertStatus(422)
-    }
+    const missingRole = await client
+      .post(`/api/v1/clinics/${clinic.id}/members/invitations`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Membro Inválido',
+        email: `${randomUUID()}@example.test`,
+      })
+    missingRole.assertStatus(422)
   })
 
   test('rejects inactive and cross-clinic custom roles during assignment', async ({ client }) => {
@@ -425,13 +423,12 @@ test.group('Clinic custom roles', (group) => {
 
     for (const roleId of [inactiveRole.id, foreignRole.id]) {
       const response = await client
-        .post(`/api/v1/clinics/${first.clinic.id}/members`)
+        .post(`/api/v1/clinics/${first.clinic.id}/members/invitations`)
         .header('Accept', 'application/json')
         .header('Authorization', `Bearer ${first.token}`)
         .json({
           fullName: 'Membro Negado',
           email: `${randomUUID()}@example.test`,
-          password: 'InitialPassword!123',
           roleId,
         })
       response.assertStatus(404)

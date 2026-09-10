@@ -12,16 +12,6 @@ export const listClinicMembersValidator = vine.compile(
     .merge(optionalRoleIdGroup())
 )
 
-export const createClinicMemberValidator = vine.compile(
-  vine
-    .object({
-      fullName: vine.string().trim().minLength(3).maxLength(180),
-      email: vine.string().trim().email().maxLength(254),
-      password: vine.string().minLength(12).maxLength(72),
-    })
-    .merge(requiredRoleIdGroup())
-)
-
 export const updateClinicMemberRoleValidator = vine.compile(
   vine.object({}).merge(requiredRoleIdGroup())
 )

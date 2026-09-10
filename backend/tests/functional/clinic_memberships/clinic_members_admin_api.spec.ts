@@ -1,7 +1,9 @@
 import { UserFactory } from '#database/factories/user_factory'
 import { ClinicFactory } from '#database/factories/clinic_factory'
 import { UserClinicRoleFactory } from '#database/factories/user_clinic_role_factory'
+import mail from '@adonisjs/mail/services/main'
 import Role from '#models/role'
+import UserClinicRole from '#models/user_clinic_role'
 import UserInvitationToken from '#models/user_invitation_token'
 import { createBearerToken as createToken } from '#tests/helpers/auth'
 import { createMembership } from '#tests/helpers/membership'
@@ -14,13 +16,15 @@ test.group('Clinic-scoped member administration', (group) => {
   group.each.setup(async () => {
     await truncateClinicSchemaTables()
     await seedAuthorizationCatalog()
+    mail.fake()
 
     return async () => {
+      mail.restore()
       await truncateClinicSchemaTables()
     }
   })
 
-  test('allows a clinic administrator to create a local user and membership', async ({
+  test('allows a clinic administrator to invite a local user and create a membership', async ({
     client,
     assert,
   }) => {
@@ -40,33 +44,38 @@ test.group('Clinic-scoped member administration', (group) => {
     const token = await createToken(administrator)
 
     const response = await client
-      .post(`/api/v1/clinics/${clinic.id}/members`)
+      .post(`/api/v1/clinics/${clinic.id}/members/invitations`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
         fullName: 'Recepcionista Local',
         email: 'local.receptionist@example.com',
-        password: 'InitialPassword!123',
         roleId: receptionistRole.id,
       })
 
     response.assertStatus(201)
 
-    const membership = response.body().membership
+    const user = response.body().user
+    const membership = await UserClinicRole.query().where('user_id', user.id).firstOrFail()
+    await membership.load('user')
+    await membership.load('role')
+    await membership.load('clinic')
 
     assert.equal(membership.clinic.id, clinic.id)
     assert.equal(membership.user.email, 'local.receptionist@example.com')
     assert.equal(membership.role.code, 'receptionist')
     assert.isTrue(membership.isActive)
-    assert.isUndefined(membership.user.passwordHash)
-    assert.isUndefined(membership.user.emailNormalized)
+    assert.isFalse(user.passwordConfigured)
+    assert.equal(user.invitationStatus, 'sent')
+    assert.isUndefined(user.passwordHash)
+    assert.isUndefined(user.emailNormalized)
 
     const loginResponse = await client.post('/api/v1/auth/login').json({
       email: 'LOCAL.RECEPTIONIST@example.com',
       password: 'InitialPassword!123',
     })
 
-    loginResponse.assertStatus(200)
+    loginResponse.assertStatus(400)
   })
 
   test('uses clinic member pagination defaults and preserves the item contract', async ({
@@ -419,7 +428,9 @@ test.group('Clinic-scoped member administration', (group) => {
     invalidPaginationResponse.assertStatus(422)
   })
 
-  test('rejects legacy roleCode across clinic-scoped member inputs', async ({ client }) => {
+  test('removes legacy member creation and rejects roleCode in remaining inputs', async ({
+    client,
+  }) => {
     const clinic = await ClinicFactory.create()
     const administrator = await UserFactory.create()
     const target = await UserFactory.create()
@@ -440,9 +451,9 @@ test.group('Clinic-scoped member administration', (group) => {
         fullName: 'Membro Legado',
         email: 'legacy.member@example.test',
         password: 'InitialPassword!123',
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
-    legacyCreate.assertStatus(422)
+    legacyCreate.assertStatus(404)
 
     const legacyUpdate = await client
       .patch(`/api/v1/clinics/${clinic.id}/members/${targetMembership.id}/role`)
@@ -552,13 +563,12 @@ test.group('Clinic-scoped member administration', (group) => {
     const receptionistRole = await Role.findByOrFail('code', 'receptionist')
 
     const response = await client
-      .post(`/api/v1/clinics/${clinic.id}/members`)
+      .post(`/api/v1/clinics/${clinic.id}/members/invitations`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
         fullName: 'Usuário Indevido',
         email: 'forbidden.user@example.com',
-        password: 'InitialPassword!123',
         roleId: receptionistRole.id,
       })
 

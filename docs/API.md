@@ -253,13 +253,6 @@ auth + globalAdmin
 
 Finalidade: listar usuários.
 
-### `POST /api/v1/users`
-
-Finalidade: criar um usuário.
-
-Este contrato com senha administrativa permanece temporariamente compatível durante a
-transição do frontend e será removido no fechamento da Fase 12.7.
-
 ### `POST /api/v1/users/invitations`
 
 Finalidade: criar um usuário sem senha e enviar um convite. Pode receber vínculos por
@@ -281,7 +274,8 @@ Parâmetros:
 
 ### `PATCH /api/v1/users/:id`
 
-Finalidade: atualizar os dados de um usuário.
+Finalidade: atualizar nome e e-mail de um usuário. Senha e confirmação de senha são
+rejeitadas; o administrador não pode definir nem substituir a credencial de outra conta.
 
 ### `PATCH /api/v1/users/:id/status`
 
@@ -381,22 +375,6 @@ inclui os metadados seguros de onboarding `passwordConfigured`, `invitationStatu
 `invitationSentAt` e `invitationExpiresAt`, sem expor senha, hash ou token. A ordenação é
 determinística por `created_at ASC, id ASC`, sempre isolada por `clinicId`.
 
-### `POST /api/v1/clinics/:clinicId/members`
-
-Permissões exigidas em conjunto:
-
-```text
-users.create
-users.assign_role
-```
-
-Finalidade: criar um usuário local e seu vínculo com o consultório.
-
-O perfil deve ser selecionado exclusivamente por `roleId`.
-
-Este contrato com senha administrativa permanece temporariamente compatível durante a
-transição do frontend.
-
 ### `POST /api/v1/clinics/:clinicId/members/invitations`
 
 Permissões exigidas em conjunto:
@@ -408,6 +386,8 @@ users.assign_role
 
 Finalidade: criar usuário sem senha, vínculo local por `roleId` e convite. A senha não é
 aceita neste endpoint e o `RoleGrantService` continua sendo a autoridade da atribuição.
+O usuário define a própria senha ao aceitar o convite. A definição direta de senha permanece
+restrita ao comando operacional de bootstrap do primeiro Administrador Geral, fora da API HTTP.
 
 ### `POST /api/v1/clinics/:clinicId/members/:membershipId/invitations/resend`
 

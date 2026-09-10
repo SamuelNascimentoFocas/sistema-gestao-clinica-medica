@@ -109,7 +109,6 @@ router
             router
               .group(() => {
                 router.get('/', [UsersController, 'index'])
-                router.post('/', [UsersController, 'store'])
                 router.post('/invitations', [UserInvitationsController, 'store'])
 
                 router
@@ -161,12 +160,6 @@ router
             router.get('/members', [ClinicMembersController, 'index']).use(
               middleware.clinicPermission({
                 permissions: ['users.read'],
-              })
-            )
-
-            router.post('/members', [ClinicMembersController, 'store']).use(
-              middleware.clinicPermission({
-                permissions: ['users.create', 'users.assign_role'],
               })
             )
 

@@ -1,6 +1,6 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
-import { createUserValidator, listUsersValidator, updateUserValidator } from '#validators/user'
+import { listUsersValidator, updateUserValidator } from '#validators/user'
 import {
   serializeUsersOnboardingStatus,
   serializeUserWithLatestOnboardingStatus,
@@ -14,10 +14,6 @@ async function emailAlreadyExists(emailNormalized: string, exceptUserId?: string
   }
 
   return Boolean(await query.first())
-}
-
-function passwordExceedsBcryptLimit(password: string) {
-  return Buffer.byteLength(password, 'utf8') > 72
 }
 
 export default class UsersController {
@@ -53,37 +49,6 @@ export default class UsersController {
     })
   }
 
-  async store({ request, response }: HttpContext) {
-    const payload = await request.validateUsing(createUserValidator)
-
-    if (passwordExceedsBcryptLimit(payload.password)) {
-      return response.unprocessableEntity({
-        message: 'A senha deve possuir no máximo 72 bytes',
-      })
-    }
-
-    const emailNormalized = payload.email.toLowerCase()
-
-    if (await emailAlreadyExists(emailNormalized)) {
-      return response.conflict({
-        message: 'Já existe um usuário cadastrado com este e-mail',
-      })
-    }
-
-    const user = await User.create({
-      fullName: payload.fullName,
-      email: payload.email,
-      emailNormalized,
-      passwordHash: payload.password,
-      isGlobalAdmin: false,
-      isActive: true,
-    })
-
-    return response.created({
-      user: await serializeUserWithLatestOnboardingStatus(user),
-    })
-  }
-
   async show({ params, response }: HttpContext) {
     const user = await User.find(params.id)
 
@@ -115,12 +80,6 @@ export default class UsersController {
       })
     }
 
-    if (payload.password && passwordExceedsBcryptLimit(payload.password)) {
-      return response.unprocessableEntity({
-        message: 'A senha deve possuir no máximo 72 bytes',
-      })
-    }
-
     if (payload.email !== undefined) {
       const emailNormalized = payload.email.toLowerCase()
 
@@ -139,10 +98,6 @@ export default class UsersController {
 
     if (payload.fullName !== undefined) {
       user.fullName = payload.fullName
-    }
-
-    if (payload.password !== undefined) {
-      user.passwordHash = payload.password
     }
 
     await user.save()

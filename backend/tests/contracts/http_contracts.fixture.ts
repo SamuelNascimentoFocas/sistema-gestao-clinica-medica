@@ -104,11 +104,6 @@ const contractsFixture = {
     route('GET', '/api/v1/clinics/:clinicId/members', permitted('users.read')),
     route(
       'POST',
-      '/api/v1/clinics/:clinicId/members',
-      permitted('users.create', 'users.assign_role')
-    ),
-    route(
-      'POST',
       '/api/v1/clinics/:clinicId/members/invitations',
       permitted('users.create', 'users.assign_role')
     ),
@@ -234,7 +229,6 @@ const contractsFixture = {
     route('PATCH', '/api/v1/clinics/:id', secured(globalAdmin)),
     route('PATCH', '/api/v1/clinics/:id/status', secured(globalAdmin)),
     route('GET', '/api/v1/users', secured(globalAdmin)),
-    route('POST', '/api/v1/users', secured(globalAdmin)),
     route('POST', '/api/v1/users/invitations', secured(globalAdmin)),
     route('POST', '/api/v1/users/:userId/invitations/resend', secured(globalAdmin)),
     route('GET', '/api/v1/users/:id', secured(globalAdmin)),
@@ -303,7 +297,7 @@ const contractsFixture = {
     'root PATCH /api/v1/users/:id/status:body':
       'c46d433ee4ce6e09977de3cbecd885476eeba01b2b06db90d21be2555c2fa0cc',
     'root PATCH /api/v1/users/:id:body':
-      'c5c522e3f63118d2cff03610e6b01ea70eac65675b8df5e32c06d064c57179ec',
+      'e0c4bdee30ff0df082b6a169dd36a0a3d4661e09b473ecdeae9bdcad84941cf2',
     'root POST /api/v1/auth/login:body':
       'd9ab1c36334474e8d943ac653526e431478882bbdc9e7b851485dbf98de34389',
     'root POST /api/v1/clinic-memberships:body':
@@ -322,8 +316,6 @@ const contractsFixture = {
       'b1c92d8f7aac0d407665b4632b823e8e1a2e133551efc9e365d5c39f66bc5533',
     'root POST /api/v1/clinics/:clinicId/members/invitations:body':
       'c18d224e029f41c45a8ff8789a94ffa4b6a5c4308ab179973e5a4a2f7f8add74',
-    'root POST /api/v1/clinics/:clinicId/members:body':
-      '50432383dc33962a9b2cab3aec6cd65288743d9f848d6333bcbc9968d19666bc',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments:body':
       '06f3de8980d9ca3e6297d3f3b953771119046b6f143229e2395baefbb7ce93a3',
     'root POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/corrections:body':
@@ -348,8 +340,6 @@ const contractsFixture = {
       '0818ae2a0605dab433c09e33f242d331bf65f236f206fd2984a1e03c6ddb0f5b',
     'root POST /api/v1/users/invitations:body':
       '17ffb62da8cf8fb4561993dfbd82ef3dcc2a0123dd62658b5546f5a2182cb404',
-    'root POST /api/v1/users:body':
-      '038415e3186e44769e42deb9e599ecca3dda5b54d05529954d030d031bb4c9d9',
   },
 } as const satisfies ContractsFixture
 
