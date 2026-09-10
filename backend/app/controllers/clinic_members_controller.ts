@@ -5,6 +5,7 @@ import User from '#models/user'
 import { createClinicMemberValidator, listClinicMembersValidator } from '#validators/clinic_member'
 import { listClinicMembers, loadMembershipRelations } from '#services/clinic_member_query_service'
 import { resolveRoleForAssignment } from '#services/role_grant_service'
+import { serializeUsersOnboardingStatusById } from '#services/user_onboarding_status_service'
 
 function passwordExceedsBcryptLimit(password: string) {
   return Buffer.byteLength(password, 'utf8') > 72
@@ -24,9 +25,16 @@ export default class ClinicMembersController {
 
     const filters = await listClinicMembersValidator.validate(request.qs())
     const memberships = await listClinicMembers(clinicAuthorization.clinic.id, filters)
+    const currentMemberships = memberships.all()
+    const usersById = await serializeUsersOnboardingStatusById(
+      currentMemberships.map((membership) => membership.user)
+    )
 
     return response.ok({
-      data: memberships.all().map((membership) => membership.serialize()),
+      data: currentMemberships.map((membership) => ({
+        ...membership.serialize(),
+        user: usersById.get(membership.userId)!,
+      })),
       meta: memberships.getMeta(),
     })
   }

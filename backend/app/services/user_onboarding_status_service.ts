@@ -20,13 +20,12 @@ export function serializeUserOnboardingStatus(user: User, invitation?: UserInvit
   }
 }
 
-export async function serializeUsersOnboardingStatus(users: User[]) {
-  const invitations = users.length
+export async function serializeUsersOnboardingStatusById(users: User[]) {
+  const userIds = [...new Set(users.map((user) => user.id))]
+  const invitations = userIds.length
     ? await UserInvitationToken.query()
-        .whereIn(
-          'user_id',
-          users.map((user) => user.id)
-        )
+        .select(['user_id', 'expires_at', 'consumed_at', 'revoked_at', 'sent_at'])
+        .whereIn('user_id', userIds)
         .orderBy('created_at', 'desc')
     : []
   const latestByUser = new Map<string, UserInvitationToken>()
@@ -37,13 +36,19 @@ export async function serializeUsersOnboardingStatus(users: User[]) {
     }
   }
 
-  return users.map((user) => serializeUserOnboardingStatus(user, latestByUser.get(user.id)))
+  return new Map(
+    users.map((user) => [user.id, serializeUserOnboardingStatus(user, latestByUser.get(user.id))])
+  )
+}
+
+export async function serializeUsersOnboardingStatus(users: User[]) {
+  const usersById = await serializeUsersOnboardingStatusById(users)
+
+  return users.map((user) => usersById.get(user.id)!)
 }
 
 export async function serializeUserWithLatestOnboardingStatus(user: User) {
-  const invitation = await UserInvitationToken.query()
-    .where('user_id', user.id)
-    .orderBy('created_at', 'desc')
-    .first()
-  return serializeUserOnboardingStatus(user, invitation ?? undefined)
+  const usersById = await serializeUsersOnboardingStatusById([user])
+
+  return usersById.get(user.id)!
 }

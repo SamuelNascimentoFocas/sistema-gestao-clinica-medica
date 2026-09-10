@@ -376,8 +376,10 @@ A resposta usa o envelope paginado do Lucid:
 }
 ```
 
-Os itens de `data` preservam o vínculo e as relações `user` e `role`. A ordenação
-é determinística por `created_at ASC, id ASC`, sempre isolada por `clinicId`.
+Os itens de `data` preservam o vínculo e as relações `user` e `role`. O objeto `user`
+inclui os metadados seguros de onboarding `passwordConfigured`, `invitationStatus`,
+`invitationSentAt` e `invitationExpiresAt`, sem expor senha, hash ou token. A ordenação é
+determinística por `created_at ASC, id ASC`, sempre isolada por `clinicId`.
 
 ### `POST /api/v1/clinics/:clinicId/members`
 

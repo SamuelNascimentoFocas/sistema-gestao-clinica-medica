@@ -2,6 +2,7 @@ import { UserFactory } from '#database/factories/user_factory'
 import { ClinicFactory } from '#database/factories/clinic_factory'
 import { UserClinicRoleFactory } from '#database/factories/user_clinic_role_factory'
 import Role from '#models/role'
+import UserInvitationToken from '#models/user_invitation_token'
 import { createBearerToken as createToken } from '#tests/helpers/auth'
 import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
@@ -119,9 +120,13 @@ test.group('Clinic-scoped member administration', (group) => {
       'email',
       'fullName',
       'id',
+      'invitationExpiresAt',
+      'invitationSentAt',
+      'invitationStatus',
       'isActive',
       'isGlobalAdmin',
       'lastLoginAt',
+      'passwordConfigured',
       'updatedAt',
     ])
     assert.deepEqual(Object.keys(member.role).sort(), [
@@ -146,6 +151,79 @@ test.group('Clinic-scoped member administration', (group) => {
     assert.equal(member.role.code, 'clinic_admin')
     assert.isUndefined(member.user.passwordHash)
     assert.isUndefined(member.user.emailNormalized)
+  })
+
+  test('associates safe onboarding metadata with each user in the current page', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Onboarding' }).create()
+    const administrator = await UserFactory.merge({
+      fullName: 'Administrador com Senha',
+      email: 'members.onboarding.admin@example.com',
+    }).create()
+    const invitedUser = await UserFactory.merge({
+      fullName: 'Membro Convidado',
+      email: 'members.onboarding.invited@example.com',
+      passwordHash: null,
+    }).create()
+
+    await createMembership({ user: administrator, clinic, roleCode: 'clinic_admin' })
+    await createMembership({ user: invitedUser, clinic, roleCode: 'receptionist' })
+
+    const invitationSentAt = DateTime.fromISO('2026-09-09T12:00:00.000Z')
+    const invitationExpiresAt = DateTime.fromISO('2099-09-10T12:00:00.000Z')
+
+    await UserInvitationToken.create({
+      userId: invitedUser.id,
+      tokenDigest: 'a'.repeat(64),
+      expiresAt: invitationExpiresAt,
+      consumedAt: null,
+      revokedAt: null,
+      sentAt: invitationSentAt,
+      createdByUserId: administrator.id,
+    })
+
+    const token = await createToken(administrator)
+    const response = await client
+      .get(`/api/v1/clinics/${clinic.id}/members`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+
+    response.assertStatus(200)
+
+    const members = response.body().data as Array<{ user: Record<string, unknown> }>
+    const administratorMember = members.find((member) => member.user.id === administrator.id)
+    const invitedMember = members.find((member) => member.user.id === invitedUser.id)
+
+    assert.exists(administratorMember)
+    assert.exists(invitedMember)
+    assert.deepInclude(administratorMember!.user, {
+      passwordConfigured: true,
+      invitationStatus: 'not_invited',
+      invitationSentAt: null,
+      invitationExpiresAt: null,
+    })
+    assert.deepInclude(invitedMember!.user, {
+      passwordConfigured: false,
+      invitationStatus: 'sent',
+      invitationSentAt: invitationSentAt.toISO(),
+      invitationExpiresAt: invitationExpiresAt.toISO(),
+    })
+
+    const serializedResponse = JSON.stringify(response.body())
+
+    for (const secretField of [
+      'token',
+      'rawToken',
+      'tokenDigest',
+      'token_digest',
+      'password',
+      'passwordHash',
+      'password_hash',
+    ]) {
+      assert.notInclude(serializedResponse, `\"${secretField}\"`)
+    }
   })
 
   test('paginates and filters clinic members without crossing clinic boundaries', async ({
