@@ -8,12 +8,16 @@ migration e uso de Schema/Table Builder quando há equivalência limpa. O objeti
 `581c6baf71ee7652c74de0efd123939cb9110cec`, sem alterar regras funcionais. O código
 antigo permanece recuperável no Git; a tag histórica `v0.1.0-mvp` não é alterada.
 
-As 25 migrations novas destinam-se a bancos novos e vazios. **Não executar sobre
-`clinic_system`, `clinic_system_test` ou outro banco com o histórico anterior.**
-O Lucid identifica migrations por nome: os novos arquivos seriam considerados
-pendentes mesmo se as tabelas já existissem. Isso não constitui uma atualização
-incremental e não deve ser resolvido com reset/fresh ou edição automática de
-`adonis_schema`.
+Os primeiros 25 arquivos formam a baseline granular e destinam-se a bancos novos
+e vazios. **Não executar essa baseline sobre `clinic_system`,
+`clinic_system_test` ou outro banco com o histórico anterior.** O Lucid identifica
+migrations por nome: os arquivos da baseline seriam considerados pendentes mesmo
+se as tabelas já existissem. Isso não constitui uma atualização incremental e não
+deve ser resolvido com reset/fresh ou edição automática de `adonis_schema`.
+
+Depois da aprovação da baseline, duas evoluções incrementais foram adicionadas.
+Portanto, um banco novo no estado atual executa 27 migrations: a baseline histórica
+de 25 arquivos e as migrations incrementais `1788307200024` e `1788307200025`.
 
 Para um ambiente local existente, preservar dados e histórico; qualquer transição
 exige decisão explícita: manter o banco anterior e criar outro vazio, ou preparar
@@ -94,9 +98,37 @@ e semântica de NULL são preservados. A função é criada antes dos triggers; 
 precedem logs porque estes podem referenciar um anexo. O rollback segue a ordem
 inversa, retirando dependentes antes de suas dependências.
 
+### Evoluções incrementais posteriores à baseline
+
+| Ordem / prefixo | Arquivo                                           | Responsabilidade estrutural                                                                 |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| 1788307200024   | `add_clinic_scope_to_roles_table.ts`              | Adiciona `clinic_id` aos roles, preserva roles de sistema globais e delimita Custom Roles por clínica. |
+| 1788307200025   | `add_user_invitation_lifecycle.ts`                | Torna `users.password_hash` nullable e cria `user_invitation_tokens` para onboarding por convite.       |
+
+A migration `0024` exige `clinic_id` nulo para roles de sistema e não nulo para
+Custom Roles. Ela adiciona FK para `clinic.clinics`, índice por clínica e índice
+único parcial sobre `clinic_id` e o nome normalizado dos roles personalizados.
+Seu `up` recusa roles personalizados antigos sem mapeamento explícito de clínica;
+o `down` recusa a remoção do escopo enquanto ainda existirem Custom Roles.
+
+A migration `0025` permite que um usuário convidado exista sem senha até o aceite.
+A tabela `clinic.user_invitation_tokens` persiste somente o digest do token, com
+expiração e estados de consumo, revogação e envio. FKs identificam o usuário e o
+ator que criou o convite; índices apoiam consulta por usuário e expiração, e um
+índice único parcial limita cada usuário a um convite pendente. O check terminal
+impede que o mesmo convite seja simultaneamente consumido e revogado. O token
+bruto não é coluna do schema.
+
+O estado estrutural atual mantém o schema `clinic` com usuários, access tokens,
+clínicas, permissões, roles e suas permissões, memberships, pacientes e vínculos,
+prontuários, profissionais e vínculos, disponibilidades e bloqueios, agendamentos,
+entradas clínicas, anexos, logs de acesso e tokens de convite. Regras de negócio e
+contratos HTTP permanecem descritos em [ARQUITETURA.md](ARQUITETURA.md) e
+[API.md](API.md).
+
 ## SQL raw restante
 
-Há nove chamadas `schema.raw`, restritas a cinco migrations:
+No conjunto atual há 13 chamadas `schema.raw`, restritas a sete migrations:
 
 | Migration (prefixo) | SQL em `up` / `down`                                                             | Por que o Builder não é adequado                                                                                                                                          |
 | ------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -105,6 +137,8 @@ Há nove chamadas `schema.raw`, restritas a cinco migrations:
 | 1788307200018       | `CREATE FUNCTION ... LANGUAGE plpgsql` / `DROP FUNCTION`                         | O Builder não define funções PL/pgSQL. Corpo, erro `55000` e mensagem são preservados.                                                                                    |
 | 1788307200022       | `CREATE TRIGGER` / `DROP TRIGGER`                                                | O Builder não representa o trigger por linha `BEFORE UPDATE OR DELETE` das entradas clínicas.                                                                             |
 | 1788307200023       | `CREATE TRIGGER` / `DROP TRIGGER`                                                | Mesmo motivo para os logs de acesso.                                                                                                                                      |
+| 1788307200024       | `CREATE UNIQUE INDEX ... WHERE` / `DROP INDEX`                                   | O Builder não representa com precisão o índice funcional parcial que limita nomes de Custom Roles dentro de cada clínica.                                                  |
+| 1788307200025       | `CREATE UNIQUE INDEX ... WHERE` / `DROP INDEX`                                   | O índice parcial garante somente um convite pendente por usuário; a condição terminal não é expressável pela API de índice comum do Builder.                               |
 
 Não há `CREATE TABLE`, FK, unique, check ou índice comum executado por `raw`.
 Expressões de checks usam `table.check(...)`, com os mesmos predicados SQL;
@@ -190,7 +224,9 @@ não comparar formatação dos arquivos de origem. O rollback deixa somente os
 objetos nativos e a extensão `btree_gist`, intencionalmente preservada nas duas
 versões. Uma diferença ou erro torna o comando malsucedido.
 
-Além disso, executar typecheck, lint, build, Prettier e `test:contracts` (59 rotas).
+Além disso, executar typecheck, lint, build, Prettier e `test:contracts`. O
+inventário corrente de rotas pertence a [API.md](API.md); esta validação não deve
+depender de uma contagem de rotas fixada no documento de migrations.
 A suíte `npm test` deve usar um terceiro banco descartável autorizado,
 `clinic_baseline_suite_20260902`, no mesmo cluster isolado: seu setup aplica
 migrations, casos executam `TRUNCATE ... RESTART IDENTITY CASCADE` e o teardown
@@ -221,7 +257,11 @@ exceção e exibe apenas o arquivo com erro. A proteção continua ativa nos doi
 formatos. O CLI também enumera arquivos pendentes após uma falha; isso não
 significa que seu DDL foi executado.
 
-## Evidência da Fase 2 — 02/09/2026
+## Evidência histórica da Fase 2 — 02/09/2026
+
+Os números desta seção registram exclusivamente o snapshot da validação da
+baseline original. Eles não representam a quantidade atual de migrations, rotas
+ou testes depois das evoluções incrementais.
 
 Validação executada exclusivamente no cluster temporário PostgreSQL 18.4,
 escutando em `127.0.0.1:55432`, com PGDATA independente em
