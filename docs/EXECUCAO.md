@@ -2,7 +2,7 @@
 
 Este documento descreve como preparar e executar localmente o MVP do Sistema de Gestão de Clínica Médica em Windows, utilizando Node.js, npm e PostgreSQL instalados no sistema operacional.
 
-## 1. Ambiente validado
+## 1. Requisitos e ambiente validado
 
 O MVP foi validado com:
 
@@ -15,6 +15,17 @@ Git 2.54.0.windows.1
 ```
 
 Essas são as versões utilizadas na validação final. O projeto não declara formalmente versões mínimas por meio do campo `engines`.
+
+Os lockfiles atuais incluem dependências que exigem Node.js 24 ou superior. Para
+reproduzir todos os comandos documentados, inclusive os testes frontend em TypeScript,
+use Node.js 24, que é a referência validada do projeto.
+
+Também são necessários:
+
+- um PostgreSQL acessível para desenvolvimento;
+- um banco separado para testes;
+- um transporte SMTP acessível para envio dos convites;
+- permissão de leitura e escrita em `backend/storage/private` para anexos clínicos.
 
 ## 2. Estrutura do projeto
 
@@ -144,6 +155,7 @@ DB_USER=clinic_app
 DB_PASSWORD=SUA_SENHA_LOCAL
 DB_DATABASE=clinic_system
 DRIVE_DISK=private_fs
+MEDICAL_RECORD_ATTACHMENT_MAX_BYTES=10485760
 SMTP_HOST=127.0.0.1
 SMTP_PORT=1025
 SMTP_SECURE=false
@@ -166,6 +178,14 @@ Nunca versione o arquivo `.env` ou senhas reais. Os arquivos locais de ambiente 
 Em produção, configure um servidor SMTP real e uma `FRONTEND_URL` HTTPS. `SMTP_USER` e
 `SMTP_PASSWORD` devem ser informados em conjunto. `sent_at` registra somente que o dispatch
 foi aceito pelo transporte configurado; não representa confirmação de entrega ao destinatário.
+
+`FRONTEND_URL` define a origem dos links de convite e deve apontar para o frontend que
+expõe `/accept-invitation`. Em desenvolvimento, os valores do exemplo pressupõem um
+servidor SMTP local na porta `1025`; o repositório não inclui esse serviço. Sem um
+transporte SMTP acessível, a criação ou o reenvio de convite retorna falha de envio.
+
+`MEDICAL_RECORD_ATTACHMENT_MAX_BYTES` é opcional, usa 10 MiB por padrão e deve ser um
+inteiro positivo de no máximo `10485760`, limite também protegido pelo banco.
 
 ## 6. Configurar o banco de testes
 
@@ -223,7 +243,7 @@ As migrations criam:
 - correções de prontuário;
 - anexos clínicos privados.
 
-## 8. Popular o catálogo de autorização
+## 8. Inicializar o catálogo de autorização
 
 O seeder do cenário demonstrativo já atualiza o catálogo automaticamente. Para executar somente o catálogo:
 
@@ -239,7 +259,10 @@ receptionist
 doctor
 ```
 
-## 9. Criar o cenário demonstrativo
+Esse seeder é idempotente e inicializa permissões e perfis de sistema. Ele não cria
+usuários, senhas, clínicas ou dados produtivos.
+
+## 9. Criar dados demonstrativos opcionais
 
 Execute:
 
@@ -256,6 +279,10 @@ NODE_ENV=production
 ```
 
 Consulte `CENARIO_DEMONSTRATIVO.md` para dados criados, credenciais e roteiro de apresentação.
+
+Esse cenário cria credenciais e dados fictícios somente para desenvolvimento e
+apresentação. Ele não substitui o bootstrap do primeiro Administrador Global e não deve
+ser executado como etapa de provisionamento produtivo.
 
 ## 10. Criar um administrador global
 
@@ -274,6 +301,15 @@ O comando solicita:
 - confirmação final.
 
 A senha deve possuir pelo menos 12 caracteres e no máximo 72 bytes.
+
+O comando é implementado em `backend/commands/create_admin.ts`. Ele cria diretamente a
+identidade inicial com `isGlobalAdmin=true`, sem convite, SMTP ou endpoint HTTP. Esse é o
+bootstrap isolado; o onboarding normal de outros usuários ocorre por convite, e não
+permite que um administrador escolha a senha de outra conta.
+
+Após o login, esse usuário é encaminhado para `/admin` mesmo sem vínculo com uma clínica.
+O painel permite administrar usuários e clínicas globalmente, mas não promove outras
+contas a Administrador Global; não existe endpoint HTTP para essa promoção.
 
 ## 11. Iniciar o backend em desenvolvimento
 
@@ -323,6 +359,10 @@ BACKEND_API_URL=http://localhost:3333
 
 `BACKEND_API_URL` é utilizado somente no servidor Next.js. Não é necessário expor essa variável com o prefixo `NEXT_PUBLIC_`.
 
+O navegador chama somente as rotas same-origin `/api/**` do Next.js. Esses BFFs acessam
+o AdonisJS server-side e mantêm o access token em cookie HTTP-only, inacessível ao
+JavaScript do navegador. O backend permanece como autoridade final de autorização.
+
 ## 13. Iniciar o frontend em desenvolvimento
 
 ```cmd
@@ -337,7 +377,7 @@ http://localhost:3000
 
 Mantenha backend e frontend executando simultaneamente em terminais separados.
 
-## 14. Ordem completa para uma instalação nova
+## 14. Ordem recomendada para uma instalação nova
 
 Resumo operacional:
 
@@ -351,9 +391,15 @@ notepad .env
 node ace generate:key
 notepad .env.test
 node ace migration:run
-node ace db:seed --files=database/seeders/demo_scenario_seeder.ts
+node ace db:seed --files=database/seeders/authorization_catalog_seeder.ts
+node ace admin:create
 npm run dev
 ```
+
+O seeder demonstrativo é opcional e já inicializa o catálogo de autorização
+internamente. Execute-o somente quando precisar do cenário fictício descrito em
+`CENARIO_DEMONSTRATIVO.md`. Ele cria usuários clinic-scoped, não cria um Administrador
+Global e não substitui `node ace admin:create` quando esse acesso global for necessário.
 
 ### Terminal 2 — frontend
 
@@ -380,16 +426,14 @@ npm run format
 npm run typecheck
 npm run lint
 npm test
+npm run test:contracts
 npm run build
 ```
 
-A validação atual da branch de adequação aprovou:
-
-```text
-98 testes funcionais
-```
-
-A suíte de testes aplica as migrations automaticamente antes da execução e reverte as migrations ao final da validação observada.
+`npm test` executa as suítes configuradas no Japa e aplica as migrations do banco de
+testes no setup. `npm run test:contracts` verifica separadamente os fingerprints de
+rotas, middlewares e regras de validação. Mantenha `clinic_system_test` separado do banco
+de desenvolvimento.
 
 ### Frontend
 
@@ -401,12 +445,10 @@ npm test
 npm run build
 ```
 
-`npm test` executa 24 testes focados: oito da camada HTTP browser/Axios, 14 de
-schemas/resolver/estado dos formulários RHF/Zod e dois da infraestrutura remota de
-DataTable. Os formulários estão descritos em
-[FORMULARIOS.md](FORMULARIOS.md). Usa `node:test`, sem iniciar Next.js, backend
-ou PostgreSQL, e a execução nativa de
-TypeScript do Node.js 24.15.0 listado nos pré-requisitos, sem runner adicional.
+`npm test` usa `node:test` para validar contratos, schemas e comportamentos do frontend,
+sem iniciar Next.js, backend ou PostgreSQL. Os formulários estão descritos em
+[FORMULARIOS.md](FORMULARIOS.md). A suíte usa o suporte nativo a TypeScript do Node.js 24
+validado, sem runner adicional.
 O Node pode emitir `MODULE_TYPELESS_PACKAGE_JSON` ao detectar o módulo TypeScript:
 é um aviso de autodetecção ESM, não uma falha. Não se alterou o tipo de módulos
 de todo o projeto apenas para eliminar esse aviso.
@@ -484,6 +526,7 @@ node ace db:seed --help
 node ace admin:create
 npm run dev
 npm test
+npm run test:contracts
 npm run build
 ```
 
@@ -491,6 +534,7 @@ npm run build
 
 ```cmd
 npm run dev
+npm test
 npm run typecheck
 npm run lint
 npm run build

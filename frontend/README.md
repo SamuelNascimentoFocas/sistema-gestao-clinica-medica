@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend do Sistema de Gestão de Clínica Médica
 
-## Getting Started
+Aplicação Next.js responsável pela interface web e pela camada BFF do sistema. O frontend usa App Router, React, TypeScript, Tailwind CSS, shadcn/ui, React Hook Form, Zod e Axios.
 
-First, run the development server:
+## Arquitetura HTTP e sessão
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```text
+Navegador -> rotas same-origin /api/** do Next.js -> backend AdonisJS
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+O navegador não chama o AdonisJS diretamente. O BFF encaminha as requisições server-side, sanitiza respostas e mantém o access token do backend em cookie HTTP-only. O JavaScript do navegador não recebe esse token. Os gates de rota e a visibilidade de ações melhoram a experiência, mas a autorização final permanece no backend.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+O cliente Axios centralizado do navegador aceita apenas URLs relativas em `/api/**`. Server Components e Route Handlers usam helpers server-side próprios, sem criar um segundo cliente de navegador.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Rotas e áreas principais
 
-## Learn More
+- `/login`: autenticação;
+- `/accept-invitation`: validação do convite e definição da senha pelo próprio usuário;
+- `/dashboard`: encaminhamento ao destino autenticado adequado;
+- `/clinics`: seleção das clínicas acessíveis;
+- `/clinics/:clinicId/**`: dashboard e módulos clinic-scoped;
+- `/admin`: gestão global de usuários e clínicas, exclusiva para `isGlobalAdmin` e sem dependência de membership;
+- `/api/**`: BFFs do Next.js usados pelo navegador.
 
-To learn more about Next.js, take a look at the following resources:
+As áreas clinic-scoped incluem administração de membros e Custom Roles, pacientes, profissionais, agendas, agendamentos, prontuários, anexos e auditoria. A clínica corrente deriva do pathname; não existe estado global persistente de clínica em localStorage ou cookie.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Onboarding e autorização
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+O fluxo administrativo cria convites sem senha. O usuário define sua própria senha em `/accept-invitation`; não existe campo para um administrador escolher ou alterar a senha de outra conta. Vínculos iniciais usam `clinicId` + `roleId`, inclusive para Custom Roles.
 
-## Deploy on Vercel
+O Administrador Global usa `/admin`, pode existir sem membership e não pode promover outra conta a Administrador Global pela interface. A criação inicial dessa identidade é um procedimento de bootstrap do backend.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Requisitos
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Para reproduzir o ambiente validado, use Node.js 24 e npm 11. Os lockfiles atuais
+incluem dependências que exigem Node.js 24 ou superior; essa versão também reproduz os
+testes frontend em TypeScript executados pelo runner nativo.
+
+O backend deve estar configurado e acessível pelo servidor Next.js.
+
+## Configuração
+
+Instale as dependências e crie o ambiente local:
+
+```cmd
+npm ci
+copy .env.example .env.local
+```
+
+Variável necessária:
+
+```env
+BACKEND_API_URL=http://localhost:3333
+```
+
+`BACKEND_API_URL` é server-only. Não use `NEXT_PUBLIC_BACKEND_API_URL` nem exponha credenciais do backend em variáveis públicas.
+
+## Desenvolvimento e execução
+
+```cmd
+npm run dev
+```
+
+O endereço padrão é `http://localhost:3000`.
+
+Após gerar o build:
+
+```cmd
+npm run build
+npm run start
+```
+
+O build usa `next/font` com Geist e pode precisar de acesso ao Google Fonts quando a fonte ainda não estiver em cache.
+
+## Testes e qualidade
+
+```cmd
+npm test
+npm run typecheck
+npm run lint
+npm run build
+```
+
+`npm test` usa `node:test` e cobre contratos, schemas e comportamentos relevantes sem iniciar o Next.js, o backend ou o PostgreSQL. O projeto não possui script frontend dedicado de formatação.
+
+## Organização
+
+```text
+src/app/          páginas, layouts e Route Handlers BFF
+src/components/   componentes de domínio e UI
+src/lib/client/   infraestrutura permitida no navegador
+src/lib/server/   integração server-side com o backend e sessão
+src/lib/          contratos, schemas e helpers compartilhados
+src/types/        tipos da aplicação
+tests/            testes do frontend
+```
+
+Listagens administrativas reutilizam `RemoteDataTable` com paginação e filtros server-side. Formulários usam React Hook Form e Zod quando apropriado, mantendo o backend como autoridade de validação.
+
+## Documentação relacionada
+
+- [Guia de execução](../docs/EXECUCAO.md)
+- [Arquitetura e segurança](../docs/ARQUITETURA.md)
+- [Formulários e validações](../docs/FORMULARIOS.md)
+- [Contratos HTTP do backend](../docs/API.md)

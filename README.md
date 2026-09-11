@@ -1,72 +1,70 @@
 # Sistema de Gestão de Clínica Médica
 
-Sistema web full stack desenvolvido como projeto acadêmico para apoiar a gestão administrativa e assistencial de clínicas médicas com múltiplos consultórios, profissionais e perfis de acesso.
+Aplicação web full stack desenvolvida como projeto acadêmico para gestão administrativa e assistencial de clínicas médicas. Uma mesma instalação atende múltiplas clínicas, com usuários, perfis e permissões contextualizados por clínica e um Administrador Global independente de vínculo local.
 
-O projeto implementa autenticação, autorização baseada em papéis, separação de dados por consultório, cadastro de pacientes e profissionais, gestão de agendas e agendamentos, prontuário eletrônico, anexos clínicos e registros de auditoria.
+O sistema cobre:
 
-## Estado do projeto
+- autenticação e onboarding de usuários por convite;
+- administração global de usuários e clínicas em `/admin`;
+- perfis de sistema e Custom Roles por clínica;
+- pacientes globais vinculáveis a diferentes clínicas;
+- profissionais, vínculos profissionais e agendas;
+- agendamentos com validação de disponibilidade, conflito e concorrência;
+- prontuário global do paciente, entradas imutáveis e correções históricas;
+- anexos clínicos privados e auditoria de acesso.
 
-O núcleo funcional do MVP está implementado e validado.
-
-Principais módulos concluídos:
-
-- autenticação e encerramento de sessão;
-- administrador global;
-- administração de consultórios;
-- usuários e vínculos com consultórios;
-- autorização baseada em papéis e permissões;
-- pacientes com identidade global e vínculo local;
-- profissionais e agendas;
-- agendamentos e controle de conflitos;
-- prontuário eletrônico global;
-- correções sem sobrescrita do registro original;
-- anexos clínicos privados;
-- auditoria de acesso ao prontuário;
-- cenário demonstrativo reproduzível.
-
-O dashboard analítico avançado, a conteinerização e a implantação em infraestrutura de produção não fazem parte do escopo congelado deste MVP.
-
-## Tecnologias
+## Stack
 
 ### Backend
 
-- Node.js
-- TypeScript
-- AdonisJS 6
-- Lucid ORM
-- VineJS
-- PostgreSQL
-- autenticação por access token
-- armazenamento privado com AdonisJS Drive
-- testes funcionais com Japa
+- AdonisJS 6, TypeScript, Lucid ORM e VineJS;
+- PostgreSQL;
+- autenticação por access token do AdonisJS;
+- bcrypt para hash de senha;
+- AdonisJS Mail para convites;
+- AdonisJS Drive para anexos privados;
+- Japa para testes funcionais e de integração.
 
 ### Frontend
 
-- Next.js 16
-- React 19
-- TypeScript
-- Tailwind CSS
-- componentes ShadCN/Base UI
+- Next.js 16 com App Router e React 19;
+- TypeScript, Tailwind CSS e shadcn/ui;
+- React Hook Form e Zod;
+- Axios centralizado para chamadas do navegador ao BFF;
+- testes com o runner nativo do Node.js.
 
-## Arquitetura
+## Arquitetura resumida
 
 ```text
 Navegador
    |
+   | HTTPS e rotas same-origin /api/**
    v
-Frontend Next.js
-http://localhost:3000
+Next.js (páginas + BFF)
    |
+   | access token disponível somente no servidor
    v
-Backend AdonisJS
-http://localhost:3333
-   |
-   v
-PostgreSQL
-127.0.0.1:5432
+AdonisJS
+   |----------------------|
+   v                      v
+PostgreSQL          storage/private + SMTP
 ```
 
-Estrutura principal:
+O navegador nunca chama o AdonisJS diretamente. No login, o BFF recebe o access token do backend e o mantém em cookie HTTP-only; a resposta entregue ao JavaScript do navegador contém apenas a identidade segura do usuário. O backend continua sendo a autoridade final de autenticação, autorização, escopo clínico e validação.
+
+O onboarding administrativo é feito por convite. O administrador informa nome, e-mail e, quando aplicável, vínculos iniciais por `clinicId` + `roleId`; o próprio usuário define sua senha pelo link recebido. Administradores não escolhem nem alteram a senha de outra conta. O comando `node ace admin:create` é a exceção operacional isolada para criar o primeiro Administrador Global.
+
+## Modelo de acesso
+
+- `Permission -> Role -> UserClinicRole` representa a autorização por clínica.
+- Perfis de sistema são globais e imutáveis; Custom Roles pertencem a uma clínica.
+- Contratos de vínculo usam `roleId`, inclusive para perfis personalizados.
+- A clínica corrente das telas clinic-scoped é derivada do pathname.
+- `isGlobalAdmin` concede o contexto global e não exige membership.
+- O painel `/admin` gerencia usuários e clínicas; a administração detalhada de membros, perfis e operações clínicas reutiliza as telas da própria clínica.
+- Não existe promoção de Administrador Global pela interface ou pela API HTTP.
+
+## Estrutura do repositório
 
 ```text
 clinica-medica/
@@ -75,91 +73,48 @@ clinica-medica/
 │   ├── commands/
 │   ├── config/
 │   ├── database/
-│   │   ├── migrations/
-│   │   └── seeders/
 │   ├── storage/private/
 │   └── tests/
 ├── frontend/
-│   └── src/
+│   ├── src/
+│   └── tests/
 ├── docs/
-├── .gitignore
 └── README.md
 ```
 
 ## Requisitos
 
-O MVP foi validado no seguinte ambiente:
+Para reproduzir o ambiente validado, use:
 
-```text
-Windows 10/11
-Node.js 24.15.0
-npm 11.16.0
-PostgreSQL 18.4
-Git 2.54.0.windows.1
-```
+- Windows 10/11 ou ambiente equivalente;
+- Node.js 24 e npm 11;
+- PostgreSQL 18;
+- Git.
 
-Essas são as versões utilizadas durante a validação, e não uma declaração formal de versões mínimas suportadas.
+Os lockfiles atuais incluem dependências que exigem Node.js 24 ou superior. Node.js 24
+é também a referência validada para os testes frontend em TypeScript. O projeto não
+declara uma versão mínima própria em `engines`.
 
-Também são necessários:
+Também são necessários dois bancos PostgreSQL separados, um para desenvolvimento e outro para testes, e um transporte SMTP acessível para exercitar o envio de convites.
 
-- PostgreSQL ativo na porta `5432`;
-- usuário de banco com permissão sobre os bancos do projeto;
-- banco de desenvolvimento `clinic_system`;
-- banco de testes `clinic_system_test`.
+## Início rápido
 
-## Instalação rápida
-
-### 1. Backend
+### Backend
 
 ```cmd
 cd backend
 npm ci
 copy .env.example .env
-notepad .env
-```
-
-Configure no arquivo `backend/.env`:
-
-```env
-DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_USER=clinic_app
-DB_PASSWORD=SUA_SENHA_LOCAL
-DB_DATABASE=clinic_system
-```
-
-Nunca coloque a senha real no `.env.example`.
-
-Gere a chave da aplicação:
-
-```cmd
 node ace generate:key
-```
-
-Confirme que `APP_KEY` está preenchida no arquivo `backend/.env`.
-
-Execute as migrations somente em um banco novo e vazio. A baseline granular substitui
-os nomes das migrations anteriores; não a execute sobre um banco com o histórico
-antigo. Consulte [Baseline de migrations](docs/MIGRATIONS.md) antes de reutilizar
-qualquer banco existente.
-
-```cmd
 node ace migration:run
-```
-
-Inicie o backend:
-
-```cmd
+node ace db:seed --files=database/seeders/authorization_catalog_seeder.ts
+node ace admin:create
 npm run dev
 ```
 
-O backend será disponibilizado em:
+Antes de executar migrations ou seeders, configure `backend/.env` e crie o banco PostgreSQL. O catálogo de autorização, o bootstrap do Administrador Global e o cenário demonstrativo são operações diferentes. Consulte o [guia de execução](docs/EXECUCAO.md) antes de preparar um ambiente existente.
 
-```text
-http://localhost:3333
-```
-
-### 2. Frontend
+### Frontend
 
 Em outro terminal:
 
@@ -170,108 +125,11 @@ copy .env.example .env.local
 npm run dev
 ```
 
-O arquivo `frontend/.env.local` deve conter:
+Com os valores locais dos exemplos, acesse `http://localhost:3000`. `BACKEND_API_URL` é usada somente pelo servidor Next.js e não deve receber o prefixo `NEXT_PUBLIC_`.
 
-```env
-BACKEND_API_URL=http://localhost:3333
-```
+## Qualidade
 
-O frontend será disponibilizado em:
-
-```text
-http://localhost:3000
-```
-
-## Cenário demonstrativo
-
-O projeto possui um seeder reproduzível para desenvolvimento e apresentação.
-
-Execute dentro de `backend`:
-
-```cmd
-node ace db:seed --files=database/seeders/demo_scenario_seeder.ts
-```
-
-O seeder:
-
-- atualiza o catálogo de permissões e perfis;
-- cria duas clínicas fictícias;
-- cria usuários com perfis diferentes;
-- cria um paciente vinculado às duas clínicas;
-- cria um profissional vinculado às duas clínicas;
-- cria disponibilidades semanais;
-- cria dois agendamentos futuros;
-- pode ser executado novamente sem duplicar o cenário;
-- recusa execução quando `NODE_ENV=production`.
-
-Credenciais locais demonstrativas:
-
-```text
-Administrador:
-admin.demo@clinica.local
-
-Recepcionista:
-recepcao.demo@clinica.local
-
-Médico:
-medico.demo@clinica.local
-
-Senha compartilhada do cenário:
-DemoClinic!123
-```
-
-Essas credenciais são exclusivamente demonstrativas e não devem ser reutilizadas em ambientes reais.
-
-## Administrador global
-
-Para criar um administrador global interativamente:
-
-```cmd
-cd backend
-node ace admin:create
-```
-
-O comando solicita:
-
-- nome completo;
-- e-mail;
-- senha com pelo menos 12 caracteres;
-- confirmação da senha;
-- confirmação final da operação.
-
-## Testes
-
-O backend usa o banco `clinic_system_test`, definido localmente em:
-
-```text
-backend/.env.test
-```
-
-Conteúdo esperado:
-
-```env
-DB_DATABASE=clinic_system_test
-```
-
-O restante da configuração é carregado do ambiente local do backend.
-
-Execute:
-
-```cmd
-cd backend
-npm test
-```
-
-A suíte aplica as migrations antes dos testes. Na validação atual da branch de adequação,
-foram aprovados:
-
-```text
-98 testes funcionais
-```
-
-O banco de testes deve ser separado do banco de desenvolvimento.
-
-## Verificações de qualidade
+Os comandos estáveis do projeto são:
 
 ### Backend
 
@@ -281,6 +139,7 @@ npm run format
 npm run typecheck
 npm run lint
 npm test
+npm run test:contracts
 npm run build
 ```
 
@@ -290,72 +149,27 @@ npm run build
 cd frontend
 npm run typecheck
 npm run lint
+npm test
 npm run build
 ```
 
-O frontend não possui atualmente scripts próprios de teste automatizado ou formatação.
-
-## Armazenamento de anexos
-
-Os anexos clínicos são armazenados localmente em:
-
-```text
-backend/storage/private
-```
-
-Características:
-
-- visibilidade privada;
-- arquivos não são servidos diretamente pelo servidor;
-- acesso ocorre somente pelas rotas autorizadas do backend;
-- downloads relevantes geram registros de auditoria;
-- o diretório é ignorado pelo Git.
-
-Não use esse diretório como estratégia definitiva de armazenamento para uma implantação distribuída sem antes definir persistência, backup e recuperação.
-
-## Segurança
-
-O MVP inclui:
-
-- senhas armazenadas por hash;
-- autenticação por token;
-- usuários e vínculos ativáveis e desativáveis;
-- autorização por papel e permissão;
-- princípio do menor privilégio;
-- isolamento por consultório;
-- validação de contexto de pacientes, profissionais e agendamentos;
-- prevenção de sobreposição de agendamentos ativos;
-- prontuário com registros imutáveis;
-- correções encadeadas;
-- anexos privados;
-- auditoria de acesso clínico;
-- segredos e arquivos locais excluídos do Git.
-
-Este projeto é um protótipo acadêmico. Uma implantação real ainda exige revisão de infraestrutura, proteção operacional, backups, observabilidade, gestão de segredos e avaliação jurídica e de segurança.
-
-## Docker
-
-O repositório não possui atualmente:
-
-- `Dockerfile`;
-- `docker-compose.yml`;
-- configuração oficial de execução por contêiner.
-
-A execução validada do MVP é local, utilizando Node.js, npm e PostgreSQL instalados no sistema operacional.
+O frontend não possui script dedicado de formatação. As suítes abrangem contratos e fluxos funcionais do backend, contratos e comportamento do frontend, além de typecheck, lint e build; as contagens não são fixadas aqui porque evoluem com o projeto.
 
 ## Documentação
 
-Consulte a pasta [`docs`](docs/README.md) para:
+- [Índice documental](docs/README.md)
+- [Instalação e execução local](docs/EXECUCAO.md)
+- [Contratos HTTP do backend](docs/API.md)
+- [Arquitetura e decisões de segurança](docs/ARQUITETURA.md)
+- [Telas, formulários e validações](docs/FORMULARIOS.md)
+- [Migrations e evolução do banco](docs/MIGRATIONS.md)
+- [Estratégia de validação](docs/VALIDACAO.md)
+- [Cenário demonstrativo](docs/CENARIO_DEMONSTRATIVO.md)
 
-- instalação e execução detalhadas;
-- cenário demonstrativo;
-- roteiro de validação;
-- arquitetura e decisões principais;
-- escopo congelado do MVP;
-- limitações e evoluções futuras.
+## Limites operacionais
+
+O repositório não contém configuração oficial de contêiner, nuvem, TLS, proxy reverso, backup ou observabilidade de produção. Anexos usam armazenamento privado local em `backend/storage/private`. Uma implantação real exige definição adicional de infraestrutura, persistência, recuperação, gestão de segredos e revisão jurídica e de segurança.
 
 ## Licença
 
-O backend está marcado como `UNLICENSED`.
-
-O projeto não deve ser considerado software distribuível sob uma licença pública até que uma licença seja formalmente escolhida e adicionada ao repositório.
+O backend está marcado como `UNLICENSED`. O projeto não deve ser tratado como software distribuído sob licença pública até que uma licença seja formalmente escolhida.
