@@ -1,4 +1,4 @@
-# Formulários frontend — Fases 8 e 10
+# Formulários frontend — Fases 8, 10, 12.7 e 12.8
 
 ## Escopo e decisão
 
@@ -6,7 +6,8 @@ Adequação à recomendação de React Hook Form e validação frontend do parec
 sem harmonizar as diferenças preexistentes entre browser, BFF e Vine.
 O backend permanece a autoridade de regras de negócio e segurança.
 
-Foram identificados **22 formulários HTML**: **17 migrados**, quatro filtros
+No inventário inicial da Fase 8 foram identificados **22 formulários HTML**:
+**17 migrados**, quatro filtros
 deliberadamente preservados e um upload preservado. Não foram criados formulários
 para botões de status, seleção de profissional ou edição de papel em uma linha.
 Create/edit continuam em componentes distintos. Não há DataTable, Dialog,
@@ -34,7 +35,7 @@ não loading, mensagens, painel aberto, dados carregados ou drafts de ações de
 
 | Arquivo                                                             | Finalidade/categoria         | Campos                                                                                                                            | Estado/handlers antes | Endpoint e payload preservados                                                                            | Sucesso preservado                                               |
 | ------------------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `src/app/login/login-form.tsx`                                      | Login; ação                  | email, password                                                                                                                   | 2/2                   | POST `/api/auth/login`; `{email,password}` sem trim no browser                                            | replace `/clinics` e refresh                                     |
+| `src/app/login/login-form.tsx`                                      | Login; ação                  | email, password                                                                                                                   | 2/2                   | POST `/api/auth/login`; `{email,password}` sem trim no browser                                            | replace `/admin` para Global Admin ou `/clinics` para usuário comum; refresh |
 | `src/components/administration/clinic-members-manager.tsx`          | Convite de membro; create    | fullName, email, roleId                                                                                                           | RHF/Zod                | POST `C/members`; BFF encaminha ao lifecycle de convite clinic-scoped por `roleId`                          | Recarrega a lista, limpa o formulário e exibe sucesso            |
 | `src/components/patients/create-patient-card.tsx`                   | Paciente/vínculo; create     | Os 13 campos de paciente descritos abaixo                                                                                         | 1 objeto/13           | POST `C/patients`; objeto completo, inclusive strings vazias                                              | Callback, reset, fecha card e mensagem                           |
 | `src/components/patients/edit-patient-card.tsx`                     | Paciente/vínculo; edit       | Os mesmos 13 campos                                                                                                               | 1 objeto/13           | PATCH `C/patients/:patientId`; conjunto completo, não apenas dirty fields                                 | Callback de atualização                                          |
@@ -154,6 +155,27 @@ dependência entre campos e seis são callbacks de register que limpam mensagens
 ou invalidam a timeline. Os oito handlers fora dos formulários migrados continuam
 intactos. Além dos 22 estados de campo, 14 flags manuais de submissão foram
 substituídas por RHF; estados de interface não foram removidos indiscriminadamente.
+
+## Onboarding e administração global — Fases 12.7 e 12.8
+
+O aceite público de convite usa RHF/Zod para `password` e
+`passwordConfirmation`, com mínimo de 12 caracteres, máximo de 72 bytes UTF-8 e
+confirmação idêntica. O token vem do fragmento, é removido imediatamente da URL e
+permanece somente em memória; validação e aceite usam BFFs `POST` same-origin.
+
+Em `/admin`, três formulários RHF/Zod têm contratos deliberadamente estreitos:
+
+- convite global de usuário: `fullName`, `email` e zero ou mais vínculos
+  `clinicId` + `roleId`;
+- edição global de usuário: somente `fullName` e `email`;
+- criação/edição de clínica: nome, CNPJ, telefone e endereço aceitos pelo backend.
+
+Nenhum formulário administrativo recebe senha ou promoção de Global Admin. A
+criação de clínica não cria usuário, vínculo, Professional ou Role. Os filtros das
+tabelas globais continuam como formulários simples com estado local e consultam
+paginação, pesquisa e status no servidor; não filtram somente a página carregada.
+Clínicas ativas oferecem link para a administração clinic-scoped existente, que
+continua responsável por memberships e Custom Roles.
 
 ## Testes e limites
 

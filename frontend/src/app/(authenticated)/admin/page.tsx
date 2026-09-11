@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { GlobalClinicsManager } from "@/components/admin/global-clinics-manager";
 import { GlobalUsersManager } from "@/components/admin/global-users-manager";
 import { canAccessGlobalAdminPage } from "@/lib/admin/global-admin-contract";
 import { getCurrentUser } from "@/lib/server/current-user";
@@ -29,7 +30,10 @@ export default async function GlobalAdminPage() {
         </p>
       </div>
 
-      <GlobalUsersManager />
+      <div className="space-y-12">
+        <GlobalUsersManager />
+        <GlobalClinicsManager />
+      </div>
     </main>
   );
 }

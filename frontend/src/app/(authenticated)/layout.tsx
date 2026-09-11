@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
+import { ShieldCheck } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/server/current-user";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { buttonVariants } from "@/components/ui/button";
 
 type AuthenticatedLayoutProps = {
   children: ReactNode;
@@ -28,6 +31,17 @@ export default async function AuthenticatedLayout({
           </div>
 
           <div className="flex items-center gap-4">
+            {user.isGlobalAdmin ? (
+              <Link
+                href="/admin"
+                className={buttonVariants({ variant: "outline" })}
+              >
+                <ShieldCheck aria-hidden="true" />
+                <span className="hidden sm:inline">Administração Global</span>
+                <span className="sm:hidden">Admin</span>
+              </Link>
+            ) : null}
+
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium">{user.fullName}</p>
               <p className="text-xs text-muted-foreground">{user.email}</p>

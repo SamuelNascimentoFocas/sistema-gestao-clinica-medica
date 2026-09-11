@@ -13,6 +13,7 @@ import {
   loginFormSchema,
   type LoginFormValues,
 } from "@/lib/forms/form-schemas";
+import { loginResponseDestination } from "@/lib/auth/authenticated-destination";
 import { FormFieldError } from "@/components/ui/form-field-error";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -25,10 +26,6 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-
-type LoginErrorResponse = {
-  message?: string;
-};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -60,16 +57,27 @@ export default function LoginPage() {
         }),
       });
 
-      const body = (await readBrowserJson(response).catch(
-        () => null,
-      )) as LoginErrorResponse | null;
+      const body = await readBrowserJson(response).catch(() => null);
 
       if (!isSuccessfulResponse(response)) {
-        setErrorMessage(body?.message ?? "Não foi possível entrar no sistema.");
+        setErrorMessage(
+          typeof body === "object" &&
+            body !== null &&
+            "message" in body &&
+            typeof body.message === "string"
+            ? body.message
+            : "Não foi possível entrar no sistema.",
+        );
         return;
       }
 
-      router.replace("/clinics");
+      const destination = loginResponseDestination(body);
+      if (!destination) {
+        setErrorMessage("O servidor retornou uma sessão inválida.");
+        return;
+      }
+
+      router.replace(destination);
       router.refresh();
     } catch {
       setErrorMessage(

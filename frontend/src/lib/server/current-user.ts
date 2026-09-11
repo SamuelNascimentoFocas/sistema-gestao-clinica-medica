@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/types/auth";
+import { cache } from "react";
 import { getSessionToken } from "@/lib/server/auth-session";
 import {
   backendApiFetch,
@@ -34,7 +35,7 @@ function parseAuthenticatedUser(body: unknown): AuthUser | null {
   return user as AuthUser;
 }
 
-export async function getCurrentUser(): Promise<AuthUser | null> {
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<AuthUser | null> {
   const token = await getSessionToken();
 
   if (!token) {
@@ -65,4 +66,4 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
     return null;
   }
-}
+});

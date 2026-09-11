@@ -588,6 +588,37 @@ seguem por `POST` no BFF Next.js, com `Cache-Control: no-store` e
 a criação usa o endpoint de convite sem senha, mostra separadamente habilitação da conta,
 senha configurada e estado do convite, e permite reenvio sem alterar vínculo ou perfil.
 
+### Administração global no frontend
+
+A rota autenticada `/admin` é independente de `clinicId` e aplica um gate server-side
+diretamente sobre `user.isGlobalAdmin`. Ela não exige membership, clínica corrente,
+cookie de clínica, armazenamento no browser ou contexto React global. A proteção de
+interface antecipa o acesso; os middlewares do backend continuam sendo a autoridade
+final de todas as operações.
+
+A página reúne duas superfícies paginadas no servidor:
+
+- `GlobalUsersManager` lista identidades, diferencia habilitação, senha configurada e
+  estado do convite, e permite convidar, editar nome/e-mail, alterar status e reenviar
+  convite. Vínculos iniciais usam exclusivamente `clinicId` + `roleId` e os perfis
+  atribuíveis continuam vindo da API clinic-scoped;
+- `GlobalClinicsManager` lista clínicas ativas e inativas, cadastra e edita somente os
+  campos aceitos pela API e altera habilitação sem confundir essa operação com exclusão.
+  Clínicas ativas oferecem entrada para a administração clinic-scoped existente;
+  clínicas inativas podem ser reativadas, mas não fornecem atalho operacional.
+
+O fluxo no browser permanece navegador → BFF Next.js em `/api/admin/*` → AdonisJS.
+Não existe chamada direta ao backend, administração de senha ou promoção de Global
+Admin nessa interface. A criação do primeiro Global Admin continua restrita ao comando
+de bootstrap. Custom Roles, memberships, profissionais e agendas não são duplicados em
+`/admin`; suas telas clinic-scoped continuam canônicas.
+
+O header autenticado apresenta `Administração Global` somente quando
+`user.isGlobalAdmin === true`, como ação separada dos oito itens de navegação da clínica.
+Após login, a própria identidade devolvida pelo BFF direciona Global Admin para `/admin`
+e usuários comuns para `/clinics`. O mesmo critério é aplicado em `/dashboard`, inclusive
+quando o Global Admin não possui membership.
+
 ### Vínculo local
 
 A tabela de vínculo associa:
