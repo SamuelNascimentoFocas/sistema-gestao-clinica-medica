@@ -75,6 +75,12 @@ export type GlobalClinicPayload = Partial<
   Pick<Clinic, (typeof CLINIC_MUTABLE_FIELDS)[number]>
 >;
 
+export function canAccessGlobalAdminPage(
+  user: Pick<AuthUser, "isGlobalAdmin"> | null,
+) {
+  return user?.isGlobalAdmin === true;
+}
+
 function invalid(message: string): ParseResult<never> {
   return { ok: false, status: 422, message };
 }
