@@ -197,7 +197,7 @@ Anexos do prontuário usam armazenamento privado (`private_fs`):
 - listagem e download repetem o gate de acesso ao prontuário e registram a finalidade;
 - não existe URL pública permanente.
 
-No download, somente PDF, JPEG e PNG preservam um content type considerado seguro; demais tipos são entregues como `application/octet-stream`. A resposta usa `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e `Cache-Control: private, no-store`. A interface oferece pré-visualização apenas local, antes do envio, para JPEG e PNG; conteúdo ativo ou arbitrário não é renderizado inline pelo servidor.
+No download, somente PDF, JPEG e PNG preservam um content type considerado seguro; demais tipos são entregues como `application/octet-stream`. A resposta usa `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e `Cache-Control: private, no-store`. Antes do envio, a interface oferece pré-visualização local para JPEG, PNG e PDF por URLs `blob:` temporárias criadas e revogadas no browser; o PDF usa a renderização nativa do navegador. Esse preview não cria uma URL pública do anexo: o armazenamento permanece privado, o download continua autenticado e conteúdo ativo ou arbitrário não é renderizado inline pelo servidor.
 
 ## 10. Auditoria e logging
 

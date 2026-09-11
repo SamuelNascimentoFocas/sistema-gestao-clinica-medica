@@ -308,7 +308,7 @@ Validações locais observáveis:
 - arquivo não vazio;
 - nome original presente e com até 255 caracteres.
 
-O limite de tamanho é configurado no backend e pode chegar a 10 MiB por arquivo. O seletor atual não promete uma allowlist de extensões; ele mostra o tipo declarado e deixa a validação definitiva para o servidor. Pré-visualização local antes do upload existe somente para JPEG e PNG.
+O limite de tamanho é configurado no backend e pode chegar a 10 MiB por arquivo. O seletor atual não promete uma allowlist de extensões; ele mostra o tipo declarado e deixa a validação definitiva para o servidor. Antes do upload, JPEG e PNG possuem preview local de imagem, enquanto PDFs usam a renderização nativa do browser. Os previews usam URLs `blob:` temporárias, revogadas quando deixam de ser necessárias, sem criar URL pública do anexo no backend.
 
 A lista de anexos mostra metadata pública e status. O download passa pelo BFF e pelo gate de prontuário, usa a finalidade já informada e não expõe URL pública permanente. O arquivo é entregue como download; tipos não considerados seguros pelo backend recebem tipo opaco. Falhas de validação, autorização ou indisponibilidade são apresentadas como mensagens sem detalhes internos.
 
