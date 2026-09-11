@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   MEDICAL_RECORD_ATTACHMENT_MAX_FILES,
   formatAttachmentFileSize,
   getAttachmentFileMetadata,
+  getLocalAttachmentPreviewKind,
   getSafeAttachmentUploadErrorMessage,
   isLocalAttachmentPreviewable,
   validateAttachmentSelection,
 } from "../src/lib/medical-records/attachment-files.ts";
+
+const uploadFormSource = await readFile(
+  new URL(
+    "../src/components/medical-records/medical-record-attachment-upload-form.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 function file(overrides = {}) {
   return {
@@ -48,13 +58,19 @@ test("selection validation retains quantity, name and non-empty checks", () => {
   );
 });
 
-test("only local JPEG and PNG files are previewable", () => {
+test("local JPEG, PNG and PDF files use the supported preview kinds", () => {
   for (const contentType of ["image/jpeg", "image/png"]) {
     assert.equal(isLocalAttachmentPreviewable(contentType), true);
+    assert.equal(getLocalAttachmentPreviewKind(contentType), "image");
   }
 
+  assert.equal(isLocalAttachmentPreviewable("application/pdf"), true);
+  assert.equal(
+    getLocalAttachmentPreviewKind("application/pdf"),
+    "pdf",
+  );
+
   for (const contentType of [
-    "application/pdf",
     "image/svg+xml",
     "text/html",
     "application/javascript",
@@ -62,7 +78,20 @@ test("only local JPEG and PNG files are previewable", () => {
     "",
   ]) {
     assert.equal(isLocalAttachmentPreviewable(contentType), false);
+    assert.equal(getLocalAttachmentPreviewKind(contentType), null);
   }
+});
+
+test("PDF preview uses a temporary browser blob URL with explicit cleanup", () => {
+  assert.match(uploadFormSource, /URL\.createObjectURL\(file\)/);
+  assert.match(
+    uploadFormSource,
+    /URL\.revokeObjectURL\(selectedFile\.previewUrl\)/,
+  );
+  assert.match(uploadFormSource, /previewKind === "pdf"/);
+  assert.match(uploadFormSource, /type="application\/pdf"/);
+  assert.doesNotMatch(uploadFormSource, /dangerouslySetInnerHTML/);
+  assert.doesNotMatch(uploadFormSource, /https?:\/\//);
 });
 
 test("selected-file metadata remains available without interpreting its contents", () => {

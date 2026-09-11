@@ -22,8 +22,9 @@ import { Label } from "@/components/ui/label";
 import {
   MEDICAL_RECORD_ATTACHMENT_MAX_FILES,
   getAttachmentFileMetadata,
+  getLocalAttachmentPreviewKind,
   getSafeAttachmentUploadErrorMessage,
-  isLocalAttachmentPreviewable,
+  type LocalAttachmentPreviewKind,
   validateAttachmentSelection,
 } from "@/lib/medical-records/attachment-files";
 
@@ -37,6 +38,7 @@ type MedicalRecordAttachmentUploadFormProps = {
 type SelectedAttachmentFile = Readonly<{
   id: string;
   file: File;
+  previewKind: LocalAttachmentPreviewKind | null;
   previewUrl: string | null;
 }>;
 
@@ -55,15 +57,19 @@ async function readResponseMessage(
 function createSelectedAttachmentFiles(
   files: readonly File[],
 ): SelectedAttachmentFile[] {
-  return files.map((file) => ({
-    id: crypto.randomUUID(),
-    file,
-    previewUrl: isLocalAttachmentPreviewable(
-      file.type,
-    )
-      ? URL.createObjectURL(file)
-      : null,
-  }));
+  return files.map((file) => {
+    const previewKind =
+      getLocalAttachmentPreviewKind(file.type);
+
+    return {
+      id: crypto.randomUUID(),
+      file,
+      previewKind,
+      previewUrl: previewKind
+        ? URL.createObjectURL(file)
+        : null,
+    };
+  });
 }
 
 function revokePreviewUrls(
@@ -269,8 +275,7 @@ export function MedicalRecordAttachmentUploadForm({
           Até {MEDICAL_RECORD_ATTACHMENT_MAX_FILES}{" "}
           arquivos por envio. O limite de tamanho
           configurado é validado pelo servidor.
-          Pré-visualização local somente para JPEG e
-          PNG.
+          Pré-visualização local para JPEG, PNG e PDF.
         </p>
 
         {selectedFiles.length > 0 ? (
@@ -284,49 +289,68 @@ export function MedicalRecordAttachmentUploadForm({
               return (
                 <li
                   key={selectedFile.id}
-                  className="flex items-center gap-3 rounded-md border bg-background p-3"
+                  className="space-y-3 rounded-md border bg-background p-3"
                 >
-                  <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
-                    {selectedFile.previewUrl ? (
-                      <Image
-                        src={selectedFile.previewUrl}
-                        alt={`Pré-visualização de ${metadata.originalName}`}
-                        width={64}
-                        height={64}
-                        unoptimized
-                        className="size-full object-cover"
-                      />
-                    ) : (
-                      <FileIcon
-                        className="size-6 text-muted-foreground"
-                        aria-hidden="true"
-                      />
-                    )}
+                  <div className="flex items-center gap-3">
+                    <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
+                      {selectedFile.previewUrl &&
+                      selectedFile.previewKind ===
+                        "image" ? (
+                        <Image
+                          src={selectedFile.previewUrl}
+                          alt={`Pré-visualização de ${metadata.originalName}`}
+                          width={64}
+                          height={64}
+                          unoptimized
+                          className="size-full object-cover"
+                        />
+                      ) : (
+                        <FileIcon
+                          className="size-6 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="break-all text-sm font-medium">
+                        {metadata.originalName}
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {metadata.formattedSize}
+                        {" · "}
+                        {metadata.declaredContentType}
+                      </p>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      disabled={isUploading}
+                      aria-label={`Remover ${metadata.originalName}`}
+                      onClick={() => {
+                        removeSelectedFile(selectedFile.id);
+                      }}
+                    >
+                      <XIcon aria-hidden="true" />
+                    </Button>
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <p className="break-all text-sm font-medium">
-                      {metadata.originalName}
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {metadata.formattedSize}
-                      {" · "}
-                      {metadata.declaredContentType}
-                    </p>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    disabled={isUploading}
-                    aria-label={`Remover ${metadata.originalName}`}
-                    onClick={() => {
-                      removeSelectedFile(selectedFile.id);
-                    }}
-                  >
-                    <XIcon aria-hidden="true" />
-                  </Button>
+                  {selectedFile.previewUrl &&
+                  selectedFile.previewKind === "pdf" ? (
+                    <object
+                      data={selectedFile.previewUrl}
+                      type="application/pdf"
+                      aria-label={`Pré-visualização de ${metadata.originalName}`}
+                      className="h-64 w-full rounded-md border bg-muted/40 sm:h-80"
+                    >
+                      <p className="p-3 text-sm text-muted-foreground">
+                        A pré-visualização deste PDF não
+                        está disponível neste navegador.
+                      </p>
+                    </object>
+                  ) : null}
                 </li>
               );
             })}

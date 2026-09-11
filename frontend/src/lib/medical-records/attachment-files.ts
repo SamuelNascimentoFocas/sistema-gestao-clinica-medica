@@ -15,6 +15,12 @@ const LOCAL_IMAGE_PREVIEW_CONTENT_TYPES = new Set([
   "image/png",
 ]);
 
+const LOCAL_PDF_PREVIEW_CONTENT_TYPE = "application/pdf";
+
+export type LocalAttachmentPreviewKind =
+  | "image"
+  | "pdf";
+
 export function validateAttachmentSelection(
   files: readonly AttachmentFileLike[],
 ): AttachmentSelectionValidation {
@@ -49,10 +55,33 @@ export function validateAttachmentSelection(
   return { ok: true };
 }
 
+export function getLocalAttachmentPreviewKind(
+  contentType: string,
+): LocalAttachmentPreviewKind | null {
+  const normalizedContentType = contentType
+    .trim()
+    .toLowerCase();
+
+  if (
+    LOCAL_IMAGE_PREVIEW_CONTENT_TYPES.has(
+      normalizedContentType,
+    )
+  ) {
+    return "image";
+  }
+
+  if (
+    normalizedContentType ===
+    LOCAL_PDF_PREVIEW_CONTENT_TYPE
+  ) {
+    return "pdf";
+  }
+
+  return null;
+}
+
 export function isLocalAttachmentPreviewable(contentType: string) {
-  return LOCAL_IMAGE_PREVIEW_CONTENT_TYPES.has(
-    contentType.trim().toLowerCase(),
-  );
+  return getLocalAttachmentPreviewKind(contentType) !== null;
 }
 
 export function formatAttachmentFileSize(sizeInBytes: number) {
