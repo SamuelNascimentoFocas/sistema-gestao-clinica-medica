@@ -1,4 +1,6 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
+import { validateAttachmentSelection } from "@/lib/medical-records/attachment-files";
+import { sanitizeMedicalRecordBackendResponse } from "@/lib/medical-records/medical-record-response";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
 
 type RouteContext = {
@@ -8,18 +10,6 @@ type RouteContext = {
     entryId: string;
   }>;
 };
-
-const MAX_FILES = 2;
-const MAX_FILE_SIZE_IN_BYTES = 10 * 1024 * 1024;
-
-const ALLOWED_CONTENT_TYPES = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-]);
-
-const ALLOWED_FILE_NAME_PATTERN =
-  /\.(pdf|jpe?g|png)$/i;
 
 function invalidUpload(message: string) {
   return Response.json(
@@ -103,15 +93,6 @@ export async function POST(
     ...formData.getAll("files[]"),
   ];
 
-  if (
-    receivedValues.length < 1 ||
-    receivedValues.length > MAX_FILES
-  ) {
-    return invalidUpload(
-      "Envie entre 1 e 2 arquivos",
-    );
-  }
-
   const files: File[] = [];
 
   for (const value of receivedValues) {
@@ -121,47 +102,16 @@ export async function POST(
       );
     }
 
-    const normalizedName = value.name.trim();
-
-    if (
-      !normalizedName ||
-      normalizedName.length > 255
-    ) {
-      return invalidUpload(
-        "O nome do arquivo é inválido",
-      );
-    }
-
-    if (
-      !ALLOWED_FILE_NAME_PATTERN.test(
-        normalizedName,
-      )
-    ) {
-      return invalidUpload(
-        "Somente arquivos PDF, JPG, JPEG ou PNG são permitidos",
-      );
-    }
-
-    if (
-      !ALLOWED_CONTENT_TYPES.has(
-        value.type.toLowerCase(),
-      )
-    ) {
-      return invalidUpload(
-        "O tipo informado do arquivo não é permitido",
-      );
-    }
-
-    if (
-      value.size < 1 ||
-      value.size > MAX_FILE_SIZE_IN_BYTES
-    ) {
-      return invalidUpload(
-        "Cada arquivo deve possuir no máximo 10 MB",
-      );
-    }
-
     files.push(value);
+  }
+
+  const selectionValidation =
+    validateAttachmentSelection(files);
+
+  if (!selectionValidation.ok) {
+    return invalidUpload(
+      selectionValidation.message,
+    );
   }
 
   const backendFormData = new FormData();
@@ -177,17 +127,19 @@ export async function POST(
   const { clinicId, patientId, entryId } =
     await context.params;
 
-  return authenticatedBackendJson(
-    `/api/v1/clinics/${encodeURIComponent(
-      clinicId,
-    )}/patients/${encodeURIComponent(
-      patientId,
-    )}/medical-record/entries/${encodeURIComponent(
-      entryId,
-    )}/attachments`,
-    {
-      method: "POST",
-      body: backendFormData,
-    },
+  return sanitizeMedicalRecordBackendResponse(
+    await authenticatedBackendJson(
+      `/api/v1/clinics/${encodeURIComponent(
+        clinicId,
+      )}/patients/${encodeURIComponent(
+        patientId,
+      )}/medical-record/entries/${encodeURIComponent(
+        entryId,
+      )}/attachments`,
+      {
+        method: "POST",
+        body: backendFormData,
+      },
+    ),
   );
 }

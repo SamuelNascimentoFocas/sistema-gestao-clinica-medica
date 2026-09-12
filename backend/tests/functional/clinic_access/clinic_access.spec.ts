@@ -1,72 +1,10 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createBearerToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
-import Role from '#models/role'
-import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-async function createUser({
-  email,
-  isGlobalAdmin = false,
-  isActive = true,
-}: {
-  email: string
-  isGlobalAdmin?: boolean
-  isActive?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário de Acesso',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createClinic({ name, isActive = true }: { name: string; isActive?: boolean }) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-  isActive = true,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: 'clinic_admin' | 'receptionist' | 'doctor'
-  isActive?: boolean
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive,
-  })
-}
-
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
 
 test.group('Clinic access authorization', (group) => {
   group.each.setup(async () => {
@@ -79,9 +17,7 @@ test.group('Clinic access authorization', (group) => {
   })
 
   test('requires authentication and an active clinic membership', async ({ client }) => {
-    const clinic = await createClinic({
-      name: 'Clínica Protegida',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica Protegida' }).create()
 
     const unauthenticatedResponse = await client
       .get(`/api/v1/clinics/${clinic.id}/context`)
@@ -89,9 +25,10 @@ test.group('Clinic access authorization', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const userWithoutMembership = await createUser({
+    const userWithoutMembership = await UserFactory.merge({
+      fullName: 'Usuário de Acesso',
       email: 'without.membership@example.com',
-    })
+    }).create()
 
     const tokenWithoutMembership = await createBearerToken(userWithoutMembership)
 
@@ -105,9 +42,10 @@ test.group('Clinic access authorization', (group) => {
       message: 'Usuário sem vínculo ativo com este consultório',
     })
 
-    const userWithInactiveMembership = await createUser({
+    const userWithInactiveMembership = await UserFactory.merge({
+      fullName: 'Usuário de Acesso',
       email: 'inactive.membership@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: userWithInactiveMembership,
@@ -127,18 +65,16 @@ test.group('Clinic access authorization', (group) => {
   })
 
   test('returns global and clinic-scoped authorization contexts', async ({ client, assert }) => {
-    const clinic = await createClinic({
-      name: 'Clínica de Contexto',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Contexto' }).create()
 
-    const globalAdmin = await createUser({
-      email: 'context.global.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const globalAdmin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário de Acesso', email: 'context.global.admin@example.com' })
+      .create()
 
-    const receptionist = await createUser({
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Acesso',
       email: 'context.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -176,17 +112,17 @@ test.group('Clinic access authorization', (group) => {
   })
 
   test('enforces the permission required by each clinic route', async ({ client, assert }) => {
-    const clinic = await createClinic({
-      name: 'Clínica de Permissões',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Permissões' }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Acesso',
       email: 'local.admin@example.com',
-    })
+    }).create()
 
-    const receptionist = await createUser({
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Acesso',
       email: 'local.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,

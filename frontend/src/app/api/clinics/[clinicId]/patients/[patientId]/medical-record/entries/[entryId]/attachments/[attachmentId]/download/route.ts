@@ -1,4 +1,5 @@
 import { authenticatedBackendBinary } from "@/lib/server/authenticated-backend-binary";
+import { sanitizeMedicalRecordBackendResponse } from "@/lib/medical-records/medical-record-response";
 import { parseMedicalRecordAccessPayload } from "@/lib/server/medical-record-payload";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
 
@@ -65,15 +66,17 @@ export async function POST(
     backendQuery.set("purposeNote", purposeNote);
   }
 
-  return authenticatedBackendBinary(
-    `/api/v1/clinics/${encodeURIComponent(
-      clinicId,
-    )}/patients/${encodeURIComponent(
-      patientId,
-    )}/medical-record/entries/${encodeURIComponent(
-      entryId,
-    )}/attachments/${encodeURIComponent(
-      attachmentId,
-    )}/download?${backendQuery.toString()}`,
+  return sanitizeMedicalRecordBackendResponse(
+    await authenticatedBackendBinary(
+      `/api/v1/clinics/${encodeURIComponent(
+        clinicId,
+      )}/patients/${encodeURIComponent(
+        patientId,
+      )}/medical-record/entries/${encodeURIComponent(
+        entryId,
+      )}/attachments/${encodeURIComponent(
+        attachmentId,
+      )}/download?${backendQuery.toString()}`,
+    ),
   );
 }

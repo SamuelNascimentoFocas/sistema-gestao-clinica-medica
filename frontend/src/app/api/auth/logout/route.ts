@@ -4,6 +4,7 @@ import {
   clearSessionCookie,
   getSessionToken,
 } from '@/lib/server/auth-session'
+import { logServerError } from '@/lib/server/server-logging'
 
 export async function DELETE() {
   const token = await getSessionToken()
@@ -17,7 +18,7 @@ export async function DELETE() {
         },
       })
     } catch (error) {
-      console.error('Falha ao invalidar o token no backend', error)
+      logServerError('auth.logout_backend_request_failed', error)
     }
   }
 

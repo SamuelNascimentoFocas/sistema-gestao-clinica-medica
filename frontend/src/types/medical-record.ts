@@ -3,9 +3,9 @@ import type {
 } from "@/types/appointment";
 import type {
   MedicalRecordSummary,
-  PaginationMeta,
   Patient,
 } from "@/types/patient";
+import type { PaginationMeta } from "@/types/pagination";
 
 export type MedicalRecordAccessPurpose =
   | "patient_care"
@@ -87,6 +87,8 @@ export type MedicalRecordEntryBase = {
   authorUserId: string;
   entryTypeCode: MedicalRecordEntryType;
   content: string;
+  contentFormat: string;
+  contentFormatVersion: number;
   correctsEntryId: string | null;
   createdAt: string;
 };

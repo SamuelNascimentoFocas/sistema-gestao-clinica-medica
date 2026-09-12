@@ -1,7 +1,11 @@
 import type { ReactNode } from "react";
 import { notFound } from "next/navigation";
 import { ClinicAppShell } from "@/components/layout/clinic-app-shell";
-import { getClinicContext } from "@/lib/server/clinic-access";
+import { ClinicSwitcher } from "@/components/layout/clinic-switcher";
+import {
+  getAccessibleClinics,
+  getClinicContext,
+} from "@/lib/server/clinic-access";
 
 type ClinicLayoutProps = {
   children: ReactNode;
@@ -21,6 +25,8 @@ export default async function ClinicLayout({
     notFound();
   }
 
+  const accessibleClinics = (await getAccessibleClinics()) ?? [];
+
   const accessLabel =
     context.access.scope === "global"
       ? "Administrador global"
@@ -32,6 +38,12 @@ export default async function ClinicLayout({
       clinicName={context.clinic.name}
       accessLabel={accessLabel}
       permissions={context.access.permissions}
+      clinicSwitcher={
+        <ClinicSwitcher
+          currentClinic={context}
+          accessibleClinics={accessibleClinics}
+        />
+      }
     >
       {children}
     </ClinicAppShell>

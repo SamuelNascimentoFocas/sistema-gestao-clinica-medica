@@ -1,5 +1,5 @@
 import { DateTime } from 'luxon'
-import { BaseModel, belongsTo, column, hasMany } from '@adonisjs/lucid/orm'
+import { BaseModel, belongsTo, column, computed, hasMany } from '@adonisjs/lucid/orm'
 import type { BelongsTo, HasMany } from '@adonisjs/lucid/types/relations'
 import MedicalRecord from '#models/medical_record'
 import Patient from '#models/patient'
@@ -11,6 +11,9 @@ import User from '#models/user'
 import MedicalRecordAttachment from '#models/medical_record_attachment'
 
 export type MedicalRecordEntryType = 'consultation' | 'evolution' | 'correction' | 'other'
+
+export const MEDICAL_RECORD_CONTENT_FORMAT = 'markdown' as const
+export const MEDICAL_RECORD_CONTENT_FORMAT_VERSION = 1 as const
 
 export default class MedicalRecordEntry extends BaseModel {
   static table = 'clinic.medical_record_entries'
@@ -44,6 +47,16 @@ export default class MedicalRecordEntry extends BaseModel {
 
   @column()
   declare content: string
+
+  @computed()
+  get contentFormat() {
+    return MEDICAL_RECORD_CONTENT_FORMAT
+  }
+
+  @computed()
+  get contentFormatVersion() {
+    return MEDICAL_RECORD_CONTENT_FORMAT_VERSION
+  }
 
   @column({ columnName: 'corrects_entry_id' })
   declare correctsEntryId: string | null

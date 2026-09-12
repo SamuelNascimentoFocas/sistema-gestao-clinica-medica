@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/types/auth";
+import type { PaginationMeta } from "@/types/pagination";
 
 export type ProfessionalWeeklyAvailability = {
   id: string;
@@ -52,21 +53,9 @@ export type ClinicProfessionalLink = {
   scheduleBlocks?: ProfessionalScheduleBlock[];
 };
 
-export type ProfessionalPaginationMeta = {
-  total: number;
-  perPage: number;
-  currentPage: number;
-  lastPage: number;
-  firstPage: number;
-  firstPageUrl: string | null;
-  lastPageUrl: string | null;
-  nextPageUrl: string | null;
-  previousPageUrl: string | null;
-};
-
 export type ProfessionalLinksResponse = {
   data: ClinicProfessionalLink[];
-  meta: ProfessionalPaginationMeta;
+  meta: PaginationMeta;
 };
 
 export type ProfessionalLinkResponse = {

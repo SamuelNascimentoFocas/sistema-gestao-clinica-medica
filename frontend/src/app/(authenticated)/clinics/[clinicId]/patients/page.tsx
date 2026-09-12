@@ -1,7 +1,5 @@
-import { notFound } from "next/navigation";
 import { ClinicPatientsManager } from "@/components/patients/clinic-patients-manager";
 import { requireClinicPermissions } from "@/lib/server/clinic-authorization";
-import { getClinicPatients } from "@/lib/server/clinic-patients";
 import { hasAnyPermission } from "@/lib/auth/permissions";
 
 type PageProps = {
@@ -34,13 +32,6 @@ export default async function PatientsPage({
     ["patients.update"],
   );
 
-  const initialPatients =
-    await getClinicPatients(clinicId);
-
-  if (!initialPatients) {
-    notFound();
-  }
-
   return (
     <div className="space-y-6">
       <div>
@@ -56,7 +47,6 @@ export default async function PatientsPage({
 
       <ClinicPatientsManager
         clinicId={clinicId}
-        initialPatients={initialPatients}
         canCreate={canCreate}
         canUpdate={canUpdate}
       />

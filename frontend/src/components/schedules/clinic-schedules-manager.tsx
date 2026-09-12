@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { ChangeEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -23,11 +30,9 @@ import {
   type WeeklyAvailabilityResponse,
   type ScheduleBlockResponse,
 } from "@/types/schedule";
-import { CreateWeeklyAvailabilityCard } from "@/components/schedules/create-weekly-availability-card";
 import { Button } from "@/components/ui/button";
-import { EditWeeklyAvailabilityCard } from "@/components/schedules/edit-weekly-availability-card";
-import { CreateScheduleBlockCard } from "@/components/schedules/create-schedule-block-card";
-import { EditScheduleBlockCard } from "@/components/schedules/edit-schedule-block-card";
+import { ScheduleBlockFormDialog } from "@/components/schedules/schedule-block-form-dialog";
+import { WeeklyAvailabilityFormDialog } from "@/components/schedules/weekly-availability-form-dialog";
 
 type ClinicSchedulesManagerProps = {
   clinicId: string;
@@ -40,9 +45,8 @@ type ClinicSchedulesManagerProps = {
   canManageOwn: boolean;
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -190,17 +194,15 @@ export function ClinicSchedulesManager({
     setIsLoading(true);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           professionalId,
         )}/schedule`,
-        {
-          method: "GET",
-          cache: "no-store",
-        },
-      );
+        method: "GET",
+        fetchOptions: { cache: "no-store" },
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -209,7 +211,7 @@ export function ClinicSchedulesManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setSchedule(null);
         setErrorMessage(
           await readResponseMessage(response),
@@ -219,7 +221,7 @@ export function ClinicSchedulesManager({
       }
 
       const body =
-        (await response.json()) as ProfessionalScheduleResponse;
+        (await readBrowserJson(response)) as ProfessionalScheduleResponse;
 
       setSchedule(body.schedule);
     } catch {
@@ -292,24 +294,22 @@ export function ClinicSchedulesManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           schedule.professional.id,
         )}/weekly-availabilities/${encodeURIComponent(
           availability.id,
         )}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            isActive: !availability.isActive,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          isActive: !availability.isActive,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -318,7 +318,7 @@ export function ClinicSchedulesManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -327,7 +327,7 @@ export function ClinicSchedulesManager({
       }
 
       const body =
-        (await response.json()) as WeeklyAvailabilityResponse;
+        (await readBrowserJson(response)) as WeeklyAvailabilityResponse;
 
       const updatedAvailability = body.availability;
 
@@ -424,24 +424,22 @@ export function ClinicSchedulesManager({
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           schedule.professional.id,
         )}/schedule-blocks/${encodeURIComponent(
           scheduleBlock.id,
         )}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            isActive: !scheduleBlock.isActive,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          isActive: !scheduleBlock.isActive,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -450,7 +448,7 @@ export function ClinicSchedulesManager({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -459,7 +457,7 @@ export function ClinicSchedulesManager({
       }
 
       const body =
-        (await response.json()) as ScheduleBlockResponse;
+        (await readBrowserJson(response)) as ScheduleBlockResponse;
 
       const updatedScheduleBlock =
         body.scheduleBlock;
@@ -674,26 +672,26 @@ export function ClinicSchedulesManager({
           </Card>
 
           {canManageSelectedSchedule ? (
-            <CreateWeeklyAvailabilityCard
+            <WeeklyAvailabilityFormDialog
               key={schedule.professional.id}
               clinicId={clinicId}
               professionalId={
                 schedule.professional.id
               }
-              onCreated={
+              onSuccess={
                 handleAvailabilityCreated
               }
             />
           ) : null}
 
           {canManageSelectedSchedule ? (
-            <CreateScheduleBlockCard
+            <ScheduleBlockFormDialog
               key={`block-${schedule.professional.id}`}
               clinicId={clinicId}
               professionalId={
                 schedule.professional.id
               }
-              onCreated={
+              onSuccess={
                 handleScheduleBlockCreated
               }
             />
@@ -729,32 +727,6 @@ export function ClinicSchedulesManager({
                   <div className="space-y-3">
                     {schedule.weeklyAvailabilities.map(
                       (availability) => {
-                        if (
-                          editingAvailabilityId ===
-                          availability.id
-                        ) {
-                          return (
-                            <EditWeeklyAvailabilityCard
-                              key={availability.id}
-                              clinicId={clinicId}
-                              professionalId={
-                                schedule.professional.id
-                              }
-                              availability={
-                                availability
-                              }
-                              onUpdated={
-                                handleAvailabilityUpdated
-                              }
-                              onCancel={() =>
-                                setEditingAvailabilityId(
-                                  null,
-                                )
-                              }
-                            />
-                          );
-                        }
-
                         return (
                           <div
                             key={availability.id}
@@ -794,23 +766,40 @@ export function ClinicSchedulesManager({
 
                             {canManageSelectedSchedule ? (
                               <div className="flex flex-wrap gap-3 border-t pt-3">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={
+                                <WeeklyAvailabilityFormDialog
+                                  clinicId={clinicId}
+                                  professionalId={
+                                    schedule.professional.id
+                                  }
+                                  availability={
+                                    availability
+                                  }
+                                  open={
+                                    editingAvailabilityId ===
+                                    availability.id
+                                  }
+                                  onOpenChange={(
+                                    isOpen,
+                                  ) => {
+                                    setEditingAvailabilityId(
+                                      isOpen
+                                        ? availability.id
+                                        : null,
+                                    );
+
+                                    if (isOpen) {
+                                      setErrorMessage(null);
+                                      setSuccessMessage(null);
+                                    }
+                                  }}
+                                  onSuccess={
+                                    handleAvailabilityUpdated
+                                  }
+                                  triggerDisabled={
                                     statusAvailabilityId !==
                                     null
                                   }
-                                  onClick={() => {
-                                    setErrorMessage(null);
-                                    setSuccessMessage(null);
-                                    setEditingAvailabilityId(
-                                      availability.id,
-                                    );
-                                  }}
-                                >
-                                  Editar horário
-                                </Button>
+                                />
 
                                 <Button
                                   type="button"
@@ -878,32 +867,6 @@ export function ClinicSchedulesManager({
                   <div className="space-y-3">
                     {schedule.scheduleBlocks.map(
                       (scheduleBlock) => {
-                        if (
-                          editingScheduleBlockId ===
-                          scheduleBlock.id
-                        ) {
-                          return (
-                            <EditScheduleBlockCard
-                              key={scheduleBlock.id}
-                              clinicId={clinicId}
-                              professionalId={
-                                schedule.professional.id
-                              }
-                              scheduleBlock={
-                                scheduleBlock
-                              }
-                              onUpdated={
-                                handleScheduleBlockUpdated
-                              }
-                              onCancel={() =>
-                                setEditingScheduleBlockId(
-                                  null,
-                                )
-                              }
-                            />
-                          );
-                        }
-
                         return (
                           <div
                             key={scheduleBlock.id}
@@ -948,23 +911,40 @@ export function ClinicSchedulesManager({
 
                             {canManageSelectedSchedule ? (
                               <div className="flex flex-wrap gap-3 border-t pt-3">
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  disabled={
+                                <ScheduleBlockFormDialog
+                                  clinicId={clinicId}
+                                  professionalId={
+                                    schedule.professional.id
+                                  }
+                                  scheduleBlock={
+                                    scheduleBlock
+                                  }
+                                  open={
+                                    editingScheduleBlockId ===
+                                    scheduleBlock.id
+                                  }
+                                  onOpenChange={(
+                                    isOpen,
+                                  ) => {
+                                    setEditingScheduleBlockId(
+                                      isOpen
+                                        ? scheduleBlock.id
+                                        : null,
+                                    );
+
+                                    if (isOpen) {
+                                      setErrorMessage(null);
+                                      setSuccessMessage(null);
+                                    }
+                                  }}
+                                  onSuccess={
+                                    handleScheduleBlockUpdated
+                                  }
+                                  triggerDisabled={
                                     statusScheduleBlockId !==
                                     null
                                   }
-                                  onClick={() => {
-                                    setErrorMessage(null);
-                                    setSuccessMessage(null);
-                                    setEditingScheduleBlockId(
-                                      scheduleBlock.id,
-                                    );
-                                  }}
-                                >
-                                  Editar bloqueio
-                                </Button>
+                                />
 
                                 <Button
                                   type="button"

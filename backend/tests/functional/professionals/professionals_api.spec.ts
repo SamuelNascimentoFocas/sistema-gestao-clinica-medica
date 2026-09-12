@@ -1,76 +1,14 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createBearerToken as createToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
-import Role from '#models/role'
 import Professional from '#models/professional'
 import ClinicProfessional from '#models/clinic_professional'
+import Role from '#models/role'
 import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-type RoleCode = 'clinic_admin' | 'receptionist' | 'doctor'
-
-async function createUser({
-  email,
-  isActive = true,
-  isGlobalAdmin = false,
-}: {
-  email: string
-  isActive?: boolean
-  isGlobalAdmin?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário de Profissionais',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-  isActive = true,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: RoleCode
-  isActive?: boolean
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive,
-  })
-}
-
-async function createToken(user: User) {
-  const token = await User.accessTokens.create(user)
-  return token.value!.release()
-}
 
 test.group('Professionals API', (group) => {
   group.each.setup(async () => {
@@ -83,7 +21,10 @@ test.group('Professionals API', (group) => {
   })
 
   test('requires authentication and professional permissions', async ({ client }) => {
-    const clinic = await createClinic('Clínica Protegida')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Protegida',
+    }).create()
 
     const unauthenticatedResponse = await client
       .get(`/api/v1/clinics/${clinic.id}/professionals`)
@@ -91,9 +32,10 @@ test.group('Professionals API', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const receptionist = await createUser({
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'professional.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -125,11 +67,15 @@ test.group('Professionals API', (group) => {
   })
 
   test('creates, lists, shows and updates a clinic professional', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Profissionais')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Profissionais',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'professional.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -225,12 +171,19 @@ test.group('Professionals API', (group) => {
   })
 
   test('links one global professional to multiple clinics', async ({ client, assert }) => {
-    const firstClinic = await createClinic('Primeira Clínica')
-    const secondClinic = await createClinic('Segunda Clínica')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Primeira Clínica',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Segunda Clínica',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'shared.professional.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -311,12 +264,19 @@ test.group('Professionals API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Clínica de Validação 1')
-    const secondClinic = await createClinic('Clínica de Validação 2')
+    const firstClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação 1',
+    }).create()
+    const secondClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação 2',
+    }).create()
 
-    const clinicAdmin = await createUser({
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'validation.professional.admin@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -330,9 +290,10 @@ test.group('Professionals API', (group) => {
       roleCode: 'clinic_admin',
     })
 
-    const doctorUser = await createUser({
+    const doctorUser = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'linked.doctor@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: doctorUser,
@@ -340,9 +301,10 @@ test.group('Professionals API', (group) => {
       roleCode: 'doctor',
     })
 
-    const receptionistUser = await createUser({
+    const receptionistUser = await UserFactory.merge({
+      fullName: 'Usuário de Profissionais',
       email: 'linked.receptionist@example.com',
-    })
+    }).create()
 
     await createMembership({
       user: receptionistUser,
@@ -386,7 +348,7 @@ test.group('Professionals API', (group) => {
       message: 'Esta conta de usuário já está vinculada a outro profissional',
     })
 
-    const invalidRoleResponse = await client
+    const nonDoctorRoleResponse = await client
       .post(`/api/v1/clinics/${firstClinic.id}/professionals`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
@@ -398,10 +360,11 @@ test.group('Professionals API', (group) => {
         userId: receptionistUser.id,
       })
 
-    invalidRoleResponse.assertStatus(409)
-    invalidRoleResponse.assertBodyContains({
-      message: 'A conta informada não possui vínculo médico ativo neste consultório',
-    })
+    nonDoctorRoleResponse.assertStatus(201)
+    assert.equal(
+      nonDoctorRoleResponse.body().professionalLink.professional.user.id,
+      receptionistUser.id
+    )
 
     const duplicateLinkResponse = await client
       .post(`/api/v1/clinics/${firstClinic.id}/professionals`)
@@ -464,7 +427,185 @@ test.group('Professionals API', (group) => {
     const professionals = await Professional.all()
     const links = await ClinicProfessional.all()
 
-    assert.lengthOf(professionals, 1)
-    assert.lengthOf(links, 1)
+    assert.lengthOf(professionals, 2)
+    assert.lengthOf(links, 2)
+  })
+
+  test('links custom-role accounts without granting permissions and preserves scope checks', async ({
+    client,
+    assert,
+  }) => {
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Perfil Personalizado',
+    }).create()
+    const otherClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Outra Clínica de Perfil Personalizado',
+    }).create()
+
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Administrador de Profissionais Customizados',
+      email: 'custom.professional.admin@example.com',
+    }).create()
+    await createMembership({ user: clinicAdmin, clinic, roleCode: 'clinic_admin' })
+
+    const customRole = await Role.create({
+      code: 'custom_professional_identity',
+      name: 'Profissional personalizado',
+      description: 'Perfil sem permissões operacionais',
+      clinicId: clinic.id,
+      isSystem: false,
+      isActive: true,
+    })
+    assert.notEqual(customRole.code, 'doctor')
+
+    const customRoleUser = await UserFactory.merge({
+      fullName: 'Conta com Perfil Personalizado',
+      email: 'custom.professional.user@example.com',
+    }).create()
+    await UserClinicRole.create({
+      userId: customRoleUser.id,
+      clinicId: clinic.id,
+      roleId: customRole.id,
+      isActive: true,
+    })
+
+    const token = await createToken(clinicAdmin)
+    const linkResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dra. Perfil Personalizado',
+        crmNumber: '77770',
+        crmState: 'MG',
+        specialty: 'Clínica Médica',
+        userId: customRoleUser.id,
+      })
+
+    linkResponse.assertStatus(201)
+    assert.equal(linkResponse.body().professionalLink.professional.user.id, customRoleUser.id)
+
+    const customRoleUserToken = await createToken(customRoleUser)
+    const unauthorizedResponse = await client
+      .get(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${customRoleUserToken}`)
+
+    unauthorizedResponse.assertStatus(403)
+
+    const otherClinicUser = await UserFactory.merge({
+      fullName: 'Conta de Outra Clínica',
+      email: 'other.clinic.professional@example.com',
+    }).create()
+    await createMembership({ user: otherClinicUser, clinic: otherClinic, roleCode: 'doctor' })
+
+    const crossClinicResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dr. Outra Clínica',
+        crmNumber: '77771',
+        crmState: 'MG',
+        specialty: 'Cardiologia',
+        userId: otherClinicUser.id,
+      })
+
+    crossClinicResponse.assertStatus(409)
+    crossClinicResponse.assertBodyContains({
+      message: 'A conta informada não possui vínculo ativo neste consultório',
+    })
+
+    const inactiveUser = await UserFactory.merge({
+      fullName: 'Conta Globalmente Inativa',
+      email: 'inactive.custom.professional@example.com',
+      isActive: false,
+    }).create()
+    await UserClinicRole.create({
+      userId: inactiveUser.id,
+      clinicId: clinic.id,
+      roleId: customRole.id,
+      isActive: true,
+    })
+
+    const inactiveUserResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dra. Conta Inativa',
+        crmNumber: '77772',
+        crmState: 'MG',
+        specialty: 'Neurologia',
+        userId: inactiveUser.id,
+      })
+
+    inactiveUserResponse.assertStatus(409)
+
+    const inactiveMembershipUser = await UserFactory.merge({
+      fullName: 'Conta com Vínculo Inativo',
+      email: 'inactive.membership.professional@example.com',
+    }).create()
+    await UserClinicRole.create({
+      userId: inactiveMembershipUser.id,
+      clinicId: clinic.id,
+      roleId: customRole.id,
+      isActive: false,
+    })
+
+    const inactiveMembershipResponse = await client
+      .post(`/api/v1/clinics/${clinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({
+        fullName: 'Dr. Vínculo Inativo',
+        crmNumber: '77773',
+        crmState: 'MG',
+        specialty: 'Pediatria',
+        userId: inactiveMembershipUser.id,
+      })
+
+    inactiveMembershipResponse.assertStatus(409)
+
+    const inactiveClinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Inativa de Profissionais',
+      isActive: false,
+    }).create()
+    const inactiveClinicAdmin = await UserFactory.merge({
+      fullName: 'Administrador da Clínica Inativa',
+      email: 'inactive.clinic.professional.admin@example.com',
+    }).create()
+    const inactiveClinicCandidate = await UserFactory.merge({
+      fullName: 'Conta da Clínica Inativa',
+      email: 'inactive.clinic.professional.user@example.com',
+    }).create()
+    await createMembership({
+      user: inactiveClinicAdmin,
+      clinic: inactiveClinic,
+      roleCode: 'clinic_admin',
+    })
+    await createMembership({
+      user: inactiveClinicCandidate,
+      clinic: inactiveClinic,
+      roleCode: 'doctor',
+    })
+
+    const inactiveClinicToken = await createToken(inactiveClinicAdmin)
+    const inactiveClinicResponse = await client
+      .post(`/api/v1/clinics/${inactiveClinic.id}/professionals`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${inactiveClinicToken}`)
+      .json({
+        fullName: 'Dra. Clínica Inativa',
+        crmNumber: '77774',
+        crmState: 'MG',
+        specialty: 'Dermatologia',
+        userId: inactiveClinicCandidate.id,
+      })
+
+    inactiveClinicResponse.assertStatus(403)
   })
 })

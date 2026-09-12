@@ -1,7 +1,8 @@
+import { UserClinicRoleFactory } from '#database/factories/user_clinic_role_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
 import { test } from '@japa/runner'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
-import User from '#models/user'
-import Clinic from '#models/clinic'
 import Permission from '#models/permission'
 import Role from '#models/role'
 import UserClinicRole from '#models/user_clinic_role'
@@ -54,6 +55,7 @@ test.group('Authorization catalog', (group) => {
     assert.notInclude(receptionistPermissions, 'appointments.create_own')
     assert.notInclude(receptionistPermissions, 'appointments.update_own')
     assert.notInclude(receptionistPermissions, 'medical_records.read')
+    assert.notInclude(receptionistPermissions, 'medical_records.access_all')
     assert.notInclude(receptionistPermissions, 'schedules.manage')
     assert.notInclude(receptionistPermissions, 'schedules.manage_own')
 
@@ -61,12 +63,14 @@ test.group('Authorization catalog', (group) => {
     assert.notInclude(receptionistPermissions, 'appointments.change_status_own')
 
     assert.notInclude(receptionistPermissions, 'users.assign_role')
+    assert.notInclude(receptionistPermissions, 'roles.manage')
 
     const doctor = await Role.query().where('code', 'doctor').preload('permissions').firstOrFail()
 
     const doctorPermissions = doctor.permissions.map((permission) => permission.code)
 
     assert.include(doctorPermissions, 'medical_records.create')
+    assert.notInclude(doctorPermissions, 'medical_records.access_all')
     assert.include(doctorPermissions, 'attachments.upload')
     assert.include(doctorPermissions, 'schedules.manage_own')
     assert.notInclude(doctorPermissions, 'schedules.manage')
@@ -79,6 +83,16 @@ test.group('Authorization catalog', (group) => {
     assert.notInclude(doctorPermissions, 'appointments.change_status')
 
     assert.notInclude(doctorPermissions, 'users.assign_role')
+    assert.notInclude(doctorPermissions, 'roles.manage')
+
+    assert.include(
+      clinicAdmin.permissions.map((permission) => permission.code),
+      'medical_records.access_all'
+    )
+    assert.include(
+      clinicAdmin.permissions.map((permission) => permission.code),
+      'roles.manage'
+    )
 
     const clinicRead = await Permission.query()
       .where('code', 'clinics.read')
@@ -95,37 +109,22 @@ test.group('Authorization catalog', (group) => {
   test('relates a user, clinic, and role correctly', async ({ assert }) => {
     await seedAuthorizationCatalog()
 
-    const user = await User.create({
+    const user = await UserFactory.merge({
       fullName: 'Recepcionista Teste',
       email: 'recepcionista@example.com',
       emailNormalized: 'recepcionista@example.com',
-      passwordHash: 'TestPassword!123',
-      isGlobalAdmin: false,
-      isActive: true,
-    })
+    }).create()
 
-    const clinic = await Clinic.create({
-      name: 'Clínica Modelo',
-      cnpj: null,
-      phone: null,
-      addressStreet: null,
-      addressNumber: null,
-      addressComplement: null,
-      addressNeighborhood: null,
-      addressCity: null,
-      addressState: null,
-      addressPostalCode: null,
-      isActive: true,
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica Modelo' }).create()
 
     const role = await Role.findByOrFail('code', 'receptionist')
 
-    const assignment = await UserClinicRole.create({
+    const assignment = await UserClinicRoleFactory.merge({
       userId: user.id,
       clinicId: clinic.id,
       roleId: role.id,
       isActive: true,
-    })
+    }).create()
 
     const loadedAssignment = await UserClinicRole.query()
       .where('id', assignment.id)

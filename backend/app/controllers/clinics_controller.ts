@@ -3,7 +3,6 @@ import Clinic from '#models/clinic'
 import {
   createClinicValidator,
   listClinicsValidator,
-  updateClinicStatusValidator,
   updateClinicValidator,
 } from '#validators/clinic'
 
@@ -151,25 +150,6 @@ export default class ClinicsController {
       clinic.addressPostalCode = payload.addressPostalCode
     }
 
-    await clinic.save()
-
-    return response.ok({
-      clinic: clinic.serialize(),
-    })
-  }
-
-  async updateStatus({ params, request, response }: HttpContext) {
-    const clinic = await Clinic.find(params.id)
-
-    if (!clinic) {
-      return response.notFound({
-        message: 'Consultório não encontrado',
-      })
-    }
-
-    const { isActive } = await request.validateUsing(updateClinicStatusValidator)
-
-    clinic.isActive = isActive
     await clinic.save()
 
     return response.ok({

@@ -5,6 +5,7 @@ import {
   backendApiFetch,
   readBackendResponse,
 } from "@/lib/server/backend-api";
+import { logServerError } from "@/lib/server/server-logging";
 
 export async function authenticatedBackendJson(
   path: string,
@@ -54,7 +55,7 @@ export async function authenticatedBackendJson(
       },
     });
   } catch (error) {
-    console.error("Falha na comunicação com o backend", error);
+    logServerError("bff.backend_json_request_failed", error);
 
     return Response.json(
       {

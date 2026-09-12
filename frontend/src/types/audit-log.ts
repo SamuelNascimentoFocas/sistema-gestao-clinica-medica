@@ -1,4 +1,4 @@
-import type { PaginationMeta } from "@/types/patient";
+import type { PaginationMeta } from "@/types/pagination";
 
 export type AuditLogAccessAction =
   | "view_timeline"

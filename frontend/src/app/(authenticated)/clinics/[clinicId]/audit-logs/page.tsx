@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { AuditLogListItem } from "@/components/audit-logs/audit-log-list-item";
+import { ClinicAuditLogsTable } from "@/components/audit-logs/clinic-audit-logs-table";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -18,7 +18,6 @@ import {
   isValidDateInput,
   localDateStartToUtcIso,
 } from "@/lib/appointments/appointment-date";
-import { getClinicAuditLogs } from "@/lib/server/clinic-audit-logs";
 import { requireClinicPermissions } from "@/lib/server/clinic-authorization";
 import { getClinicMembers } from "@/lib/server/clinic-members";
 import { getClinicPatients } from "@/lib/server/clinic-patients";
@@ -39,15 +38,6 @@ type PageProps = {
     clinicId: string;
   }>;
   searchParams: Promise<SearchParams>;
-};
-
-type AuditLogPageFilters = {
-  fromDate: string;
-  toDate: string;
-  userId?: string;
-  patientId?: string;
-  accessAction?: AuditLogAccessAction;
-  purposeCode?: AuditLogPurposeCode;
 };
 
 export const metadata = {
@@ -94,47 +84,6 @@ function parsePurposeCode(
   )
     ? (value as AuditLogPurposeCode)
     : undefined;
-}
-
-function buildAuditLogsHref(
-  clinicId: string,
-  filters: AuditLogPageFilters,
-  page: number,
-) {
-  const searchParams = new URLSearchParams({
-    fromDate: filters.fromDate,
-    toDate: filters.toDate,
-    page: String(page),
-  });
-
-  if (filters.userId) {
-    searchParams.set("userId", filters.userId);
-  }
-
-  if (filters.patientId) {
-    searchParams.set(
-      "patientId",
-      filters.patientId,
-    );
-  }
-
-  if (filters.accessAction) {
-    searchParams.set(
-      "accessAction",
-      filters.accessAction,
-    );
-  }
-
-  if (filters.purposeCode) {
-    searchParams.set(
-      "purposeCode",
-      filters.purposeCode,
-    );
-  }
-
-  return `/clinics/${encodeURIComponent(
-    clinicId,
-  )}/audit-logs?${searchParams.toString()}`;
 }
 
 export default async function AuditLogsPage({
@@ -233,52 +182,6 @@ export default async function AuditLogsPage({
     differenceInDays < 0
       ? "A data inicial deve ser anterior ou igual à data final."
       : null;
-
-  const filters: AuditLogPageFilters = {
-    fromDate,
-    toDate,
-    userId,
-    patientId,
-    accessAction,
-    purposeCode,
-  };
-
-  const auditLogsResponse = rangeError
-    ? null
-    : await getClinicAuditLogs(clinicId, {
-        page,
-        perPage: 20,
-        from: localDateStartToUtcIso(
-          fromDate,
-          context.clinic.timezone,
-        ),
-        to: localDateStartToUtcIso(
-          addDaysToDateInput(toDate, 1),
-          context.clinic.timezone,
-        ),
-        userId,
-        patientId,
-        accessAction,
-        purposeCode,
-      });
-
-  if (!rangeError && !auditLogsResponse) {
-    notFound();
-  }
-
-  const logs = auditLogsResponse?.data ?? [];
-
-  const meta = auditLogsResponse?.meta ?? {
-    total: 0,
-    perPage: 20,
-    currentPage: 1,
-    lastPage: 1,
-    firstPage: 1,
-    firstPageUrl: null,
-    lastPageUrl: null,
-    nextPageUrl: null,
-    previousPageUrl: null,
-  };
 
   return (
     <div className="space-y-6">
@@ -494,77 +397,28 @@ export default async function AuditLogsPage({
         <Card>
           <CardHeader>
             <CardTitle>Registros de acesso</CardTitle>
-
-            <CardDescription>
-              {meta.total === 1
-                ? "1 evento de auditoria encontrado."
-                : `${meta.total} eventos de auditoria encontrados.`}
-            </CardDescription>
           </CardHeader>
 
           <CardContent>
-            {logs.length === 0 ? (
-              <div className="py-8 text-center">
-                <p className="font-medium">
-                  Nenhum evento encontrado
-                </p>
-
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Ajuste o período ou os filtros para
-                  consultar outros registros.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {logs.map((log) => (
-                  <AuditLogListItem
-                    key={log.id}
-                    log={log}
-                    clinicTimezone={
-                      context.clinic.timezone
-                    }
-                  />
-                ))}
-              </div>
-            )}
-
-            {meta.lastPage > 1 ? (
-              <div className="mt-6 flex items-center justify-between border-t pt-4">
-                <p className="text-sm text-muted-foreground">
-                  Página {meta.currentPage} de{" "}
-                  {meta.lastPage}
-                </p>
-
-                <div className="flex gap-3">
-                  {meta.currentPage > 1 ? (
-                    <Link
-                      href={buildAuditLogsHref(
-                        clinicId,
-                        filters,
-                        meta.currentPage - 1,
-                      )}
-                      className="border-input bg-background hover:bg-accent inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium"
-                    >
-                      Anterior
-                    </Link>
-                  ) : null}
-
-                  {meta.currentPage <
-                  meta.lastPage ? (
-                    <Link
-                      href={buildAuditLogsHref(
-                        clinicId,
-                        filters,
-                        meta.currentPage + 1,
-                      )}
-                      className="border-input bg-background hover:bg-accent inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium"
-                    >
-                      Próxima
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+            <ClinicAuditLogsTable
+              clinicId={clinicId}
+              clinicTimezone={context.clinic.timezone}
+              page={page}
+              query={{
+                from: localDateStartToUtcIso(
+                  fromDate,
+                  context.clinic.timezone,
+                ),
+                to: localDateStartToUtcIso(
+                  addDaysToDateInput(toDate, 1),
+                  context.clinic.timezone,
+                ),
+                userId,
+                patientId,
+                accessAction,
+                purposeCode,
+              }}
+            />
           </CardContent>
         </Card>
       )}

@@ -1,9 +1,21 @@
 "use client";
 
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  FormEvent,
-  useState,
-} from "react";
+  medicalRecordCorrectionFormSchema,
+  type MedicalRecordCorrectionFormValues,
+} from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,12 +28,8 @@ type MedicalRecordCorrectionFormProps = {
   onCancel: () => void;
 };
 
-async function readResponseMessage(
-  response: Response,
-) {
-  const body: unknown = await response
-    .json()
-    .catch(() => null);
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -44,59 +52,40 @@ export function MedicalRecordCorrectionForm({
 }: MedicalRecordCorrectionFormProps) {
   const router = useRouter();
 
-  const [content, setContent] = useState("");
+  const {
+    register,
+    resetField,
+    control,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting },
+  } = useForm<MedicalRecordCorrectionFormValues>({
+    resolver: zodResolver(medicalRecordCorrectionFormSchema),
+    defaultValues: { content: "" },
+  });
+  const [content] = useWatch({ control, name: ["content"] });
 
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] =
-    useState<string | null>(null);
-
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
+  async function handleSubmit({ content }: MedicalRecordCorrectionFormValues) {
     const normalizedContent = content.trim();
 
-    if (!normalizedContent) {
-      setErrorMessage(
-        "Informe o conteúdo da correção.",
-      );
-
-      return;
-    }
-
-    if (normalizedContent.length > 20_000) {
-      setErrorMessage(
-        "A correção deve possuir no máximo 20.000 caracteres.",
-      );
-
-      return;
-    }
-
-    setIsSubmitting(true);
     setErrorMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientId,
-        )}/medical-record/entries/${encodeURIComponent(
-          entryId,
-        )}/corrections`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: normalizedContent,
-          }),
+        )}/medical-record/entries/${encodeURIComponent(entryId)}/corrections`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          content: normalizedContent,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -105,79 +94,76 @@ export function MedicalRecordCorrectionForm({
         return;
       }
 
-      if (!response.ok) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+      if (!isSuccessfulResponse(response)) {
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      setContent("");
+      resetField("content", { defaultValue: "" });
 
       await onCorrected();
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor.",
-      );
-    } finally {
-      setIsSubmitting(false);
+      setErrorMessage("Não foi possível comunicar com o servidor.");
     }
   }
 
   return (
     <form
       className="mt-4 space-y-4 rounded-md border bg-muted/30 p-4"
-      onSubmit={handleSubmit}
+      onSubmit={submitForm(handleSubmit)}
     >
       <div className="space-y-2">
-        <Label
-          htmlFor={`medical-record-correction-${entryId}`}
-        >
+        <Label htmlFor={`medical-record-correction-${entryId}`}>
           Conteúdo da correção
         </Label>
 
         <textarea
+          {...register("content", {
+            onChange: () => {
+              setErrorMessage(null);
+            },
+          })}
+          aria-invalid={!!errors.content}
+          aria-describedby={
+            errors.content
+              ? `medical-record-correction-${entryId}` + "-error"
+              : undefined
+          }
           id={`medical-record-correction-${entryId}`}
-          value={content}
           required
           maxLength={20_000}
           disabled={isSubmitting}
           rows={6}
           className="border-input bg-background min-h-32 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
           placeholder="Registre a informação correta ou complementar. A entrada original permanecerá preservada."
-          onChange={(event) => {
-            setContent(event.target.value);
-            setErrorMessage(null);
-          }}
+        />
+        <FormFieldError
+          id={`medical-record-correction-${entryId}` + "-error"}
+          message={errors.content?.message}
         />
 
         <p className="text-xs text-muted-foreground">
           {content.length.toLocaleString("pt-BR")}
           /20.000 caracteres
         </p>
+
+        <p className="text-xs text-muted-foreground">
+          Formatação Markdown: use # para títulos, **texto** para negrito,
+          *texto* para itálico e - ou 1. para listas. HTML, links e imagens não
+          são renderizados.
+        </p>
       </div>
 
       {errorMessage ? (
-        <p
-          className="text-sm text-destructive"
-          role="alert"
-        >
+        <p className="text-sm text-destructive" role="alert">
           {errorMessage}
         </p>
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button
-          type="submit"
-          disabled={
-            isSubmitting ||
-            !content.trim()
-          }
-        >
-          {isSubmitting
-            ? "Registrando correção..."
-            : "Registrar correção"}
+        <Button type="submit" disabled={isSubmitting || !content.trim()}>
+          {isSubmitting ? "Registrando correção..." : "Registrar correção"}
         </Button>
 
         <Button

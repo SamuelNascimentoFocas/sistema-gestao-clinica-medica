@@ -1,6 +1,6 @@
 import { authenticatedBackendJson } from "@/lib/server/authenticated-backend-json";
 import { rejectUntrustedMutation } from "@/lib/server/request-security";
-import { isClinicMemberRoleCode } from "@/types/administration";
+import { isUuid, parseRoleIdPayload } from "@/lib/administration/role-contract";
 
 type RouteContext = {
   params: Promise<{
@@ -21,25 +21,19 @@ export async function PATCH(
 
   const body: unknown = await request.json().catch(() => null);
 
-  const roleCode =
-    typeof body === "object" &&
-    body !== null &&
-    "roleCode" in body
-      ? body.roleCode
-      : null;
+  const parsedPayload = parseRoleIdPayload(body);
 
-  if (!isClinicMemberRoleCode(roleCode)) {
+  if (!parsedPayload.ok) {
     return Response.json(
-      {
-        message: "Perfil inválido",
-      },
-      {
-        status: 422,
-      },
+      { message: parsedPayload.message },
+      { status: parsedPayload.status },
     );
   }
 
   const { clinicId, membershipId } = await context.params;
+  if (!isUuid(clinicId) || !isUuid(membershipId)) {
+    return Response.json({ message: "Vínculo inválido" }, { status: 422 });
+  }
 
   return authenticatedBackendJson(
     `/api/v1/clinics/${encodeURIComponent(
@@ -47,9 +41,7 @@ export async function PATCH(
     )}/members/${encodeURIComponent(membershipId)}/role`,
     {
       method: "PATCH",
-      body: JSON.stringify({
-        roleCode,
-      }),
+      body: JSON.stringify(parsedPayload.value),
     },
   );
 }

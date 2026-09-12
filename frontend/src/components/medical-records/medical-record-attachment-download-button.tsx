@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -17,10 +24,9 @@ type MedicalRecordAttachmentDownloadButtonProps = {
 };
 
 async function readResponseMessage(
-  response: Response,
+  response: BrowserResponse,
 ) {
-  const body: unknown = await response
-    .json()
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -36,14 +42,12 @@ async function readResponseMessage(
 }
 
 function getDownloadFileName(
-  response: Response,
+  response: BrowserResponse,
   fallbackName: string,
 ) {
-  const contentDisposition = response.headers.get(
-    "content-disposition",
-  );
+  const contentDisposition = response.headers["content-disposition"];
 
-  if (!contentDisposition) {
+  if (typeof contentDisposition !== "string" || !contentDisposition) {
     return fallbackName;
   }
 
@@ -93,8 +97,8 @@ export function MedicalRecordAttachmentDownloadButton({
     setErrorMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<Blob>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientId,
@@ -103,20 +107,19 @@ export function MedicalRecordAttachmentDownloadButton({
         )}/attachments/${encodeURIComponent(
           attachment.id,
         )}/download`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            purposeCode:
-              accessValues.purposeCode,
-            purposeNote:
-              accessValues.purposeNote.trim() ||
-              null,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          purposeCode:
+            accessValues.purposeCode,
+          purposeNote:
+            accessValues.purposeNote.trim() ||
+            null,
+        }),
+        responseType: "blob",
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -125,7 +128,7 @@ export function MedicalRecordAttachmentDownloadButton({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -133,7 +136,7 @@ export function MedicalRecordAttachmentDownloadButton({
         return;
       }
 
-      const fileContents = await response.blob();
+      const fileContents = response.data;
 
       const objectUrl =
         URL.createObjectURL(fileContents);

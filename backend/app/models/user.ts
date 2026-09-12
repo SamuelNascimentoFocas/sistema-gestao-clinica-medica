@@ -8,6 +8,7 @@ import { DbAccessTokensProvider, type AccessToken } from '@adonisjs/auth/access_
 import UserClinicRole from '#models/user_clinic_role'
 import Professional from '#models/professional'
 import Appointment from '#models/appointment'
+import UserInvitationToken from '#models/user_invitation_token'
 
 const AuthFinder = withAuthFinder(() => hash.use('bcrypt'), {
   uids: ['emailNormalized'],
@@ -30,7 +31,7 @@ export default class User extends compose(BaseModel, AuthFinder) {
   declare emailNormalized: string
 
   @column({ columnName: 'password_hash', serializeAs: null })
-  declare passwordHash: string
+  declare passwordHash: string | null
 
   @column({ columnName: 'is_global_admin' })
   declare isGlobalAdmin: boolean
@@ -80,6 +81,11 @@ export default class User extends compose(BaseModel, AuthFinder) {
     foreignKey: 'confirmedByUserId',
   })
   declare confirmedAppointments: HasMany<typeof Appointment>
+
+  @hasMany(() => UserInvitationToken, {
+    foreignKey: 'userId',
+  })
+  declare invitationTokens: HasMany<typeof UserInvitationToken>
 
   @hasMany(() => Appointment, {
     foreignKey: 'completedByUserId',

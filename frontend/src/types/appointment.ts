@@ -1,3 +1,5 @@
+import type { PaginationMeta } from "@/types/pagination";
+
 export type AppointmentStatus =
   | "scheduled"
   | "confirmed"
@@ -97,21 +99,9 @@ export type Appointment = {
   createdByUser?: AppointmentUserSummary | null;
 };
 
-export type AppointmentPaginationMeta = {
-  total: number;
-  perPage: number;
-  currentPage: number;
-  lastPage: number;
-  firstPage: number;
-  firstPageUrl: string | null;
-  lastPageUrl: string | null;
-  nextPageUrl: string | null;
-  previousPageUrl: string | null;
-};
-
 export type AppointmentsResponse = {
   data: Appointment[];
-  meta: AppointmentPaginationMeta;
+  meta: PaginationMeta;
 };
 
 export type AppointmentResponse = {

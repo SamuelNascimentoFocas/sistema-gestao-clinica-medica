@@ -1,6 +1,20 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+} from "@/lib/client/browser-api";
+
+import { useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  loginFormSchema,
+  type LoginFormValues,
+} from "@/lib/forms/form-schemas";
+import { loginResponseDestination } from "@/lib/auth/authenticated-destination";
+import { FormFieldError } from "@/components/ui/form-field-error";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,56 +27,62 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-type LoginErrorResponse = {
-  message?: string;
-};
-
 export default function LoginPage() {
   const router = useRouter();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const {
+    control,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginFormSchema),
+    defaultValues: { email: "", password: "" },
+  });
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  async function handleSubmit({ email, password }: LoginFormValues) {
     setErrorMessage(null);
-    setIsSubmitting(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await browserApi.request<string>({
+        url: "/api/auth/login",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
         },
-        body: JSON.stringify({
+        data: JSON.stringify({
           email,
           password,
         }),
       });
 
-      const body = (await response.json().catch(() => null)) as
-        | LoginErrorResponse
-        | null;
+      const body = await readBrowserJson(response).catch(() => null);
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
-          body?.message ?? "Não foi possível entrar no sistema.",
+          typeof body === "object" &&
+            body !== null &&
+            "message" in body &&
+            typeof body.message === "string"
+            ? body.message
+            : "Não foi possível entrar no sistema.",
         );
         return;
       }
 
-      router.replace("/clinics");
+      const destination = loginResponseDestination(body);
+      if (!destination) {
+        setErrorMessage("O servidor retornou uma sessão inválida.");
+        return;
+      }
+
+      router.replace(destination);
       router.refresh();
     } catch {
       setErrorMessage(
         "Não foi possível conectar ao servidor. Tente novamente.",
       );
-    } finally {
-      setIsSubmitting(false);
     }
   }
 
@@ -82,35 +102,57 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent>
-          <form className="space-y-5" onSubmit={handleSubmit}>
+          <form className="space-y-5" onSubmit={submitForm(handleSubmit)}>
             <div className="space-y-2">
               <Label htmlFor="email">E-mail</Label>
 
-              <Input
-                id="email"
+              <Controller
+                control={control}
                 name="email"
-                type="email"
-                autoComplete="email"
-                placeholder="nome@exemplo.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                disabled={isSubmitting}
-                required
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="email"
+                    type="email"
+                    autoComplete="email"
+                    placeholder="nome@exemplo.com"
+                    aria-invalid={!!errors.email}
+                    aria-describedby={errors.email ? "email-error" : undefined}
+                    disabled={isSubmitting}
+                    required
+                  />
+                )}
+              />
+              <FormFieldError
+                id="email-error"
+                message={errors.email?.message}
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
 
-              <Input
-                id="password"
+              <Controller
+                control={control}
                 name="password"
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                disabled={isSubmitting}
-                required
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    aria-invalid={!!errors.password}
+                    aria-describedby={
+                      errors.password ? "password-error" : undefined
+                    }
+                    disabled={isSubmitting}
+                    required
+                  />
+                )}
+              />
+              <FormFieldError
+                id="password-error"
+                message={errors.password?.message}
               />
             </div>
 

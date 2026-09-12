@@ -24,7 +24,7 @@ test.group('User model', (group) => {
     assert.isString(user.id)
     assert.notEqual(user.passwordHash, plainPassword)
 
-    const passwordIsValid = await hash.use('bcrypt').verify(user.passwordHash, plainPassword)
+    const passwordIsValid = await hash.use('bcrypt').verify(user.passwordHash!, plainPassword)
 
     assert.isTrue(passwordIsValid)
 

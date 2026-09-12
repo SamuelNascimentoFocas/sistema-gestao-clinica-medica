@@ -8,6 +8,7 @@ import {
   clearSessionCookie,
   getSessionToken,
 } from '@/lib/server/auth-session'
+import { logServerError } from '@/lib/server/server-logging'
 
 export async function GET() {
   const token = await getSessionToken()
@@ -49,7 +50,7 @@ export async function GET() {
 
     return NextResponse.json(backendBody)
   } catch (error) {
-    console.error('Falha na comunicação com o backend ao validar a sessão', error)
+    logServerError('auth.session_validation_failed', error)
 
     return NextResponse.json(
       {

@@ -1,43 +1,9 @@
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { UserFactory } from '#database/factories/user_factory'
+import { createBearerToken } from '#tests/helpers/auth'
 import { test } from '@japa/runner'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
-import User from '#models/user'
-import Clinic from '#models/clinic'
 import Role from '#models/role'
-
-async function createUser({
-  email,
-  isGlobalAdmin,
-  isActive = true,
-}: {
-  email: string
-  isGlobalAdmin: boolean
-  isActive?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário Teste',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createClinic({ name, isActive = true }: { name: string; isActive?: boolean }) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive,
-  })
-}
 
 async function createRole({
   code,
@@ -57,12 +23,6 @@ async function createRole({
   })
 }
 
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
-
 test.group('Clinic memberships', (group) => {
   group.each.setup(async () => {
     await truncateClinicSchemaTables()
@@ -79,10 +39,11 @@ test.group('Clinic memberships', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const regularUser = await createUser({
+    const regularUser = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'regular.membership@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
     const token = await createBearerToken(regularUser)
 
@@ -98,26 +59,24 @@ test.group('Clinic memberships', (group) => {
   })
 
   test('allows a global administrator to manage memberships', async ({ client, assert }) => {
-    const admin = await createUser({
-      email: 'membership.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'membership.admin@example.com' })
+      .create()
 
-    const user = await createUser({
+    const user = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'membership.user@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
-    const clinic = await createClinic({
-      name: 'Clínica do Vínculo',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica do Vínculo' }).create()
 
-    await createRole({
+    const receptionistRole = await createRole({
       code: 'receptionist',
       name: 'Recepcionista',
     })
 
-    await createRole({
+    const doctorRole = await createRole({
       code: 'doctor',
       name: 'Médico',
     })
@@ -131,7 +90,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     createResponse.assertStatus(201)
@@ -145,7 +104,7 @@ test.group('Clinic memberships', (group) => {
 
     const listResponse = await client
       .get(
-        `/api/v1/clinic-memberships?userId=${user.id}&clinicId=${clinic.id}&roleCode=receptionist`
+        `/api/v1/clinic-memberships?userId=${user.id}&clinicId=${clinic.id}&roleId=${receptionistRole.id}`
       )
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
@@ -166,7 +125,7 @@ test.group('Clinic memberships', (group) => {
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
-        roleCode: 'doctor',
+        roleId: doctorRole.id,
       })
 
     updateResponse.assertStatus(200)
@@ -185,21 +144,19 @@ test.group('Clinic memberships', (group) => {
   })
 
   test('rejects duplicate and invalid memberships', async ({ client }) => {
-    const admin = await createUser({
-      email: 'membership.validation.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'membership.validation.admin@example.com' })
+      .create()
 
-    const user = await createUser({
+    const user = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'membership.validation.user@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
-    const clinic = await createClinic({
-      name: 'Clínica de Validação',
-    })
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Validação' }).create()
 
-    await createRole({
+    const receptionistRole = await createRole({
       code: 'receptionist',
       name: 'Recepcionista',
     })
@@ -213,7 +170,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     firstResponse.assertStatus(201)
@@ -225,7 +182,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     duplicateResponse.assertStatus(409)
@@ -240,7 +197,7 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: admin.id,
         clinicId: clinic.id,
-        roleCode: 'receptionist',
+        roleId: receptionistRole.id,
       })
 
     globalAdminResponse.assertStatus(409)
@@ -252,9 +209,47 @@ test.group('Clinic memberships', (group) => {
       .json({
         userId: user.id,
         clinicId: clinic.id,
-        roleCode: 'invalid_role',
+        roleId: 'invalid-role-id',
       })
 
     invalidRoleResponse.assertStatus(422)
+  })
+
+  test('rejects legacy roleCode across global membership inputs', async ({ client }) => {
+    const admin = await UserFactory.apply('globalAdmin').create()
+    const user = await UserFactory.create()
+    const clinic = await ClinicFactory.create()
+    const receptionistRole = await createRole({
+      code: 'receptionist',
+      name: 'Recepcionista',
+    })
+    const token = await createBearerToken(admin)
+
+    const legacyCreate = await client
+      .post('/api/v1/clinic-memberships')
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ userId: user.id, clinicId: clinic.id, roleCode: 'receptionist' })
+    legacyCreate.assertStatus(422)
+
+    const created = await client
+      .post('/api/v1/clinic-memberships')
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ userId: user.id, clinicId: clinic.id, roleId: receptionistRole.id })
+    created.assertStatus(201)
+
+    const legacyUpdate = await client
+      .patch(`/api/v1/clinic-memberships/${created.body().membership.id}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ roleId: receptionistRole.id, roleCode: 'receptionist' })
+    legacyUpdate.assertStatus(422)
+
+    const legacyFilter = await client
+      .get('/api/v1/clinic-memberships?roleCode=receptionist')
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+    legacyFilter.assertStatus(422)
   })
 })

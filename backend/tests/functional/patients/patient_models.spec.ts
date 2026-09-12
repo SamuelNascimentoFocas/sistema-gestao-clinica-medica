@@ -1,26 +1,10 @@
+import { ClinicFactory } from '#database/factories/clinic_factory'
 import { DateTime } from 'luxon'
 import { test } from '@japa/runner'
 import Patient from '#models/patient'
 import PatientClinic from '#models/patient_clinic'
 import MedicalRecord from '#models/medical_record'
-import Clinic from '#models/clinic'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive: true,
-  })
-}
 
 async function createPatient({ fullName, cpf }: { fullName: string; cpf: string | null }) {
   return Patient.create({
@@ -50,7 +34,7 @@ test.group('Patient models', (group) => {
   })
 
   test('relates a patient to clinics and one medical record', async ({ assert }) => {
-    const clinic = await createClinic('Clínica do Paciente')
+    const clinic = await ClinicFactory.merge({ name: 'Clínica do Paciente' }).create()
 
     const patient = await createPatient({
       fullName: 'Paciente Modelo',
@@ -119,8 +103,8 @@ test.group('Patient models', (group) => {
   })
 
   test('enforces clinic-link and medical-record uniqueness', async ({ assert }) => {
-    const firstClinic = await createClinic('Primeira Clínica')
-    const secondClinic = await createClinic('Segunda Clínica')
+    const firstClinic = await ClinicFactory.merge({ name: 'Primeira Clínica' }).create()
+    const secondClinic = await ClinicFactory.merge({ name: 'Segunda Clínica' }).create()
 
     const firstPatient = await createPatient({
       fullName: 'Primeiro Paciente',

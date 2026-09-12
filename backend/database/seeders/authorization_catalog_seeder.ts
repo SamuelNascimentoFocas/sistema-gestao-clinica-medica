@@ -42,6 +42,11 @@ export const PERMISSIONS = [
   },
 
   {
+    code: 'roles.manage',
+    description: 'Gerenciar perfis personalizados do consultório',
+  },
+
+  {
     code: 'patients.read',
     description: 'Visualizar pacientes',
   },
@@ -112,6 +117,10 @@ export const PERMISSIONS = [
   {
     code: 'medical_records.read',
     description: 'Visualizar prontuários',
+  },
+  {
+    code: 'medical_records.access_all',
+    description: 'Acessar prontuários sem exigir relação profissional com o paciente',
   },
   {
     code: 'medical_records.create',

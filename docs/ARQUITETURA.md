@@ -1,35 +1,32 @@
-# Arquitetura do Sistema
+# Arquitetura do Sistema de Gestão de Clínica Médica
 
-Este documento apresenta a arquitetura técnica do MVP do Sistema de Gestão de Clínica Médica, suas principais decisões de projeto e a organização dos módulos.
+Este documento descreve a arquitetura implementada, seus limites de confiança e as principais decisões técnicas. Os contratos HTTP detalhados estão em [API.md](API.md), os fluxos de interface em [FORMULARIOS.md](FORMULARIOS.md) e os procedimentos locais em [EXECUCAO.md](EXECUCAO.md).
 
 ## 1. Visão geral
 
-O sistema segue uma arquitetura web full stack composta por três partes principais:
+O sistema é uma aplicação web multi-clínica formada por duas aplicações TypeScript e um banco PostgreSQL:
 
 ```text
-Navegador
-   |
-   v
-Frontend Next.js
-http://localhost:3000
-   |
-   v
-Backend AdonisJS
-http://localhost:3333
-   |
-   v
-PostgreSQL
-127.0.0.1:5432
+Browser
+  -> Next.js App Router
+     -> Server Components e Route Handlers
+     -> BFF same-origin /api/**
+        -> AdonisJS /api/v1/**
+           -> PostgreSQL
+           -> armazenamento privado de anexos
+           -> SMTP
 ```
 
-Responsabilidades:
+As responsabilidades são deliberadamente separadas:
 
-- o frontend apresenta as telas, formulários e navegação;
-- o backend concentra autenticação, autorização, regras de negócio e acesso aos dados;
-- o PostgreSQL preserva integridade, relacionamentos e restrições críticas;
-- anexos clínicos são mantidos em armazenamento privado local.
+- o Next.js renderiza a interface, mantém a sessão do frontend e oferece a camada BFF;
+- o AdonisJS é a autoridade final de autenticação, autorização, validação e regras de negócio;
+- o PostgreSQL mantém relacionamentos, unicidade, integridade referencial e restrições de concorrência;
+- arquivos clínicos ficam fora da área pública e só são lidos após autorização.
 
-## 2. Organização do repositório
+No fluxo normal, o browser chama rotas relativas `/api/**` do Next.js. Ele não chama o AdonisJS diretamente e não recebe o access token emitido pelo backend. O frontend pode ocultar ações e antecipar bloqueios por usabilidade, mas isso nunca substitui a autorização no backend.
+
+## 2. Repositório e camadas
 
 ```text
 clinica-medica/
@@ -46,7 +43,6 @@ clinica-medica/
 │   │   ├── migrations/
 │   │   └── seeders/
 │   ├── start/
-│   ├── storage/private/
 │   └── tests/
 ├── frontend/
 │   └── src/
@@ -54,662 +50,182 @@ clinica-medica/
 │       ├── components/
 │       ├── lib/
 │       └── types/
-├── docs/
-└── README.md
+└── docs/
 ```
-
-## 3. Backend
-
-O backend utiliza:
-
-- Node.js;
-- TypeScript;
-- AdonisJS 6;
-- Lucid ORM;
-- VineJS;
-- PostgreSQL;
-- autenticação por access token;
-- Japa para testes funcionais.
-
-### Camadas principais
-
-#### Controllers
-
-Recebem requisições HTTP e coordenam:
-
-- autenticação;
-- validação;
-- consulta e persistência;
-- serialização;
-- respostas HTTP.
-
-#### Validators
-
-Validam dados de entrada antes da execução das regras de negócio.
-
-#### Models
-
-Representam tabelas e relações do schema `clinic`.
-
-#### Middleware
-
-Aplicam regras transversais, como:
-
-- autenticação;
-- administrador global;
-- permissão por consultório;
-- gestão geral ou própria de agendas;
-- gestão geral ou própria de agendamentos.
-
-#### Services
-
-Concentram regras reutilizáveis, como:
-
-- autorização por consultório;
-- proteção do último administrador local efetivo.
-
-#### Migrations
-
-Criam e fortalecem a estrutura do banco, incluindo foreign keys, checks, índices, unicidades e constraints temporais.
-
-## 4. Frontend
-
-O frontend utiliza:
-
-- Next.js 16;
-- React 19;
-- TypeScript;
-- Tailwind CSS;
-- componentes ShadCN/Base UI.
-
-### Organização
-
-A estrutura usa o App Router do Next.js.
-
-As páginas autenticadas ficam sob segmentos protegidos e são renderizadas conforme:
-
-- sessão válida;
-- consultório selecionado;
-- permissões do contexto atual.
-
-A comunicação com o backend ocorre por funções server-side em:
-
-```text
-frontend/src/lib/server
-```
-
-A variável:
-
-```env
-BACKEND_API_URL=http://localhost:3333
-```
-
-é usada no servidor Next.js e não precisa ser exposta ao navegador.
-
-### Proteção de interface
-
-A interface:
-
-- oculta módulos sem permissão;
-- bloqueia páginas protegidas;
-- usa o contexto do consultório;
-- não substitui a autorização do backend.
-
-O backend permanece a autoridade final.
-
-## 5. Modelo multi-consultório
-
-O sistema foi projetado para suportar múltiplos consultórios.
-
-Cada operação contextual usa:
-
-```text
-clinicId
-```
-
-O acesso depende de:
-
-- consultório existente;
-- consultório ativo;
-- usuário ativo;
-- vínculo ativo do usuário com o consultório;
-- perfil ativo;
-- permissões exigidas.
-
-O administrador global é uma exceção controlada e recebe permissão curinga:
-
-```text
-*
-```
-
-## 6. Usuários, perfis e permissões
-
-### Usuário
-
-Um usuário possui identidade global.
-
-Campos relevantes:
-
-- nome;
-- e-mail;
-- hash de senha;
-- status ativo;
-- indicador de administrador global.
-
-### Vínculo local
-
-A tabela de vínculo associa:
-
-```text
-usuário + consultório + perfil
-```
-
-Cada usuário possui no máximo um vínculo por consultório.
-
-### Perfis padrão
-
-```text
-clinic_admin
-receptionist
-doctor
-```
-
-### Princípio do menor privilégio
-
-As permissões são atribuídas por perfil.
-
-Exemplos:
-
-- recepcionista não recebe acesso clínico;
-- médica recebe acesso ao prontuário;
-- médica administra apenas a própria agenda;
-- auditoria fica restrita a perfil autorizado;
-- administrador local gerencia o consultório.
-
-## 7. Proteção do último administrador local
-
-O sistema identifica o administrador local efetivo quando:
-
-- o vínculo está ativo;
-- o usuário está ativo;
-- o perfil está ativo;
-- o perfil é `clinic_admin`.
-
-Operações administrativas impedem a remoção ou desativação do último administrador local efetivo de um consultório.
-
-Essa regra reduz o risco de deixar uma clínica sem administração local.
-
-## 8. Pacientes
-
-O paciente possui identidade global.
-
-O vínculo local é representado por:
-
-```text
-patient_clinics
-```
-
-Isso permite:
-
-- o mesmo paciente em mais de uma clínica;
-- número local diferente em cada clínica;
-- ativação ou inativação local;
-- um único prontuário global.
-
-Restrições importantes:
-
-- CPF global único quando informado;
-- um vínculo por paciente e clínica;
-- número local único dentro da clínica;
-- um prontuário por paciente.
-
-## 9. Profissionais
-
-O profissional também possui identidade global.
-
-Pode estar ligado opcionalmente a um usuário do sistema.
-
-O vínculo local é representado por:
-
-```text
-clinic_professionals
-```
-
-Ele guarda informações como:
-
-- código local;
-- duração padrão de consulta;
-- aceitação de agendamentos;
-- status do vínculo.
-
-Restrições importantes:
-
-- CRM único por estado;
-- usuário profissional único quando vinculado;
-- um vínculo por profissional e clínica;
-- código local único na clínica.
-
-## 10. Agenda profissional
-
-A agenda possui dois componentes:
-
-### Disponibilidade semanal
-
-Define os períodos recorrentes de atendimento:
-
-```text
-weekday
-start_time
-end_time
-```
-
-Regras:
-
-- dia da semana entre 1 e 7;
-- início menor que fim;
-- combinação exata não pode ser duplicada.
-
-### Bloqueios
-
-Representam indisponibilidades pontuais:
-
-```text
-starts_at
-ends_at
-reason
-```
-
-Regras:
-
-- início menor que fim;
-- intervalo exato não pode ser duplicado;
-- bloqueio pertence a um vínculo profissional-clínica.
-
-### Gestão geral e própria
-
-Usuários com:
-
-```text
-schedules.manage
-```
-
-podem administrar qualquer agenda do consultório.
-
-Usuários com:
-
-```text
-schedules.manage_own
-```
-
-podem administrar somente a agenda do profissional ligado ao próprio usuário, desde que profissional e vínculo estejam ativos.
-
-## 11. Agendamentos
-
-Um agendamento pertence simultaneamente a:
-
-- uma clínica;
-- um vínculo paciente-clínica;
-- um vínculo profissional-clínica;
-- um usuário criador.
-
-Foreign keys compostas comprovam que paciente e profissional pertencem ao mesmo consultório informado no agendamento.
-
-### Estados
-
-```text
-scheduled
-confirmed
-completed
-cancelled
-no_show
-```
-
-### Integridade temporal
-
-O banco garante:
-
-- início anterior ao fim;
-- duração entre 5 e 480 minutos;
-- metadados coerentes com o status;
-- versão positiva;
-- consistência de confirmação;
-- consistência de conclusão;
-- consistência de cancelamento;
-- consistência de ausência.
-
-### Sobreposição
-
-A constraint de exclusão usa:
-
-```text
-btree_gist
-```
-
-e impede sobreposição de agendamentos com status:
-
-```text
-scheduled
-confirmed
-```
-
-O intervalo é tratado como:
-
-```text
-[início, fim)
-```
-
-Assim, horários adjacentes são permitidos.
-
-### Concorrência
-
-O módulo usa:
-
-- proteção no banco contra sobreposição;
-- controle otimista de versão;
-- transações em operações compostas;
-- preservação do agendamento anterior no reagendamento.
-
-## 12. Prontuário eletrônico
-
-Cada paciente possui um único prontuário global.
-
-O acesso ocorre por um contexto local autorizado de clínica e paciente.
-
-### Entradas clínicas
-
-Cada entrada registra:
-
-- prontuário;
-- clínica de origem;
-- vínculo profissional;
-- usuário autor;
-- conteúdo clínico;
-- data e hora;
-- contexto de agendamento quando aplicável.
-
-### Imutabilidade
-
-Entradas clínicas não são sobrescritas.
-
-Correções:
-
-- criam um novo registro;
-- apontam para a entrada corrigida;
-- preservam o original;
-- formam cadeia linear;
-- mantêm rastreabilidade.
-
-## 13. Anexos clínicos
-
-Anexos são vinculados a:
-
-- prontuário;
-- entrada clínica;
-- clínica de origem;
-- usuário responsável.
-
-O armazenamento usa:
-
-```text
-backend/storage/private
-```
-
-Características:
-
-- visibilidade privada;
-- arquivos não são servidos diretamente;
-- download passa por controller autorizado;
-- metadados são validados;
-- acesso pode gerar auditoria;
-- caminhos privados não são expostos na API.
-
-## 14. Auditoria
-
-O módulo registra acessos relevantes ao prontuário.
-
-Ações previstas:
-
-```text
-view_timeline
-view_entry
-list_attachments
-download_attachment
-```
-
-Finalidades previstas:
-
-```text
-patient_care
-care_coordination
-legal_obligation
-other
-```
-
-O log contém contexto suficiente para rastreabilidade sem duplicar conteúdo clínico.
-
-A interface de auditoria oferece:
-
-- filtros;
-- paginação;
-- ordenação decrescente;
-- usuário responsável;
-- paciente;
-- finalidade;
-- data e hora;
-- metadados seguros de anexo.
-
-## 15. Autenticação
-
-O login cria um access token.
-
-A sessão autenticada permite:
-
-- consultar o próprio usuário;
-- listar clínicas acessíveis;
-- encerrar a sessão.
-
-As senhas são armazenadas como hash.
-
-Respostas serializadas não incluem:
-
-- senha;
-- hash;
-- token interno;
-- dados sensíveis desnecessários.
-
-## 16. Autorização
-
-A autorização ocorre em camadas.
-
-### Camada 1 — autenticação
-
-Confirma usuário autenticado.
-
-### Camada 2 — contexto de consultório
-
-Confirma:
-
-- usuário ativo;
-- clínica existente e ativa;
-- vínculo ativo;
-- perfil ativo;
-- permissões exigidas.
-
-### Camada 3 — escopo do recurso
-
-Confirma:
-
-- agenda própria ou geral;
-- agendamento próprio ou geral;
-- paciente pertencente ao contexto;
-- profissional pertencente ao contexto;
-- anexo pertencente ao prontuário e clínica corretos.
-
-## 17. Banco de dados
-
-O projeto usa PostgreSQL e um schema dedicado:
-
-```text
-clinic
-```
-
-As migrations criam 11 etapas principais:
-
-1. schema;
-2. usuários;
-3. access tokens;
-4. clínicas e autorização;
-5. pacientes e prontuários;
-6. profissionais e agendas;
-7. agendamentos;
-8. prevenção de sobreposição;
-9. entradas clínicas e logs;
-10. fortalecimento das constraints clínicas;
-11. anexos clínicos.
-
-### Responsabilidade do banco
-
-O banco protege invariantes mesmo quando uma operação não passa pela interface.
-
-Exemplos:
-
-- formatos;
-- unicidades;
-- foreign keys;
-- intervalos válidos;
-- coerência de status;
-- isolamento composto;
-- imutabilidade clínica;
-- prevenção de sobreposição.
-
-## 18. Testes
-
-O backend usa Japa com servidor HTTP real em testes funcionais.
-
-O banco de testes:
-
-```text
-clinic_system_test
-```
-
-é separado do banco de desenvolvimento.
-
-A suíte cobre:
-
-- autenticação;
-- usuários;
-- clínicas;
-- vínculos;
-- autorização;
-- pacientes;
-- profissionais;
-- agendas;
-- agendamentos;
-- concorrência;
-- prontuários;
-- anexos;
-- auditoria;
-- comando de administrador global.
-
-Resultado registrado no fechamento do MVP:
-
-```text
-88 testes aprovados
-```
-
-## 19. Builds
 
 ### Backend
 
-O build compila TypeScript e gera a pasta:
-
-```text
-backend/build
-```
+- **Rotas e middleware** definem a fronteira HTTP e aplicam autenticação, autoridade global ou permissão no contexto de clínica.
+- **Controllers** validam a entrada, coordenam casos de uso e formam a resposta.
+- **Validators VineJS** definem os contratos aceitos pelo backend.
+- **Services** concentram regras de aplicação, transações, locks e políticas reutilizáveis.
+- **Models Lucid** representam o schema `clinic` e suas relações.
+- **Migrations** são a fonte versionada da evolução do banco.
 
 ### Frontend
 
-O build do Next.js valida:
+- **Server Components** resolvem identidade, acesso e dados iniciais quando apropriado.
+- **Route Handlers** formam o BFF, recuperam a credencial HTTP-only e encaminham payloads permitidos ao backend.
+- **Componentes client-side** usam os BFFs same-origin para tabelas, diálogos e mutações.
+- **Schemas Zod e React Hook Form** oferecem validação e estado de formulário no browser; VineJS e as regras do backend continuam definitivos.
+- **Parsers defensivos** evitam confiar apenas em assertions TypeScript para respostas externas.
 
-- compilação;
-- TypeScript;
-- geração das rotas;
-- preparação da aplicação para execução local de produção.
+## 3. Autenticação, sessão e onboarding
 
-## 20. Segurança por padrão
+### Sessão
 
-Decisões incorporadas:
+O AdonisJS autentica credenciais e emite o access token usado nas chamadas servidor a servidor. O Next.js guarda essa credencial em cookie HTTP-only, com atributos seguros adequados ao ambiente. A resposta de login entregue ao JavaScript contém a identidade pública necessária para navegação, não o token do backend.
 
-- hash de senha;
-- token de acesso;
-- menor privilégio;
-- bloqueio por inatividade;
-- isolamento por consultório;
-- foreign keys compostas;
-- validação de entrada;
-- transações;
-- controle de concorrência;
-- registros clínicos imutáveis;
-- armazenamento privado;
-- auditoria;
-- segredos fora do Git.
+Senhas são verificadas e persistidas com bcrypt. Usuário inativo não autentica. Uma conta convidada pode ter `passwordHash` nulo até o aceite; tentar autenticar antes de configurar a senha resulta na mesma fronteira segura de falha de credenciais.
 
-## 21. Limitações arquiteturais atuais
+### Onboarding por convite
 
-O MVP não possui:
+O onboarding administrativo normal é exclusivamente por convite:
 
-- Docker;
-- orquestração;
-- proxy reverso;
-- TLS configurado no repositório;
-- armazenamento distribuído;
-- fila de tarefas;
-- cache;
-- observabilidade de produção;
-- serviço de backup;
-- recuperação automatizada;
-- especificação OpenAPI;
-- testes automatizados próprios no frontend;
-- dashboard analítico avançado.
+1. um Global Admin ou administrador autorizado da clínica cria o convite;
+2. o backend gera um token aleatório de 32 bytes e persiste somente seu digest SHA-256;
+3. o e-mail contém o token bruto no fragmento da URL de aceite;
+4. a página pública remove o fragmento da barra de endereço e mantém o token apenas em memória;
+5. o usuário define e confirma a própria senha;
+6. o backend consome o convite em transação e ativa a senha configurada.
 
-Essas ausências não impedem a validação acadêmica local, mas precisam ser tratadas antes de uma implantação real.
+O convite expira em 24 horas, é de uso único e o reenvio revoga convites pendentes anteriores. O envio SMTP ocorre depois do commit da transação. Respostas administrativas nunca devolvem o token bruto.
 
-## 22. Evoluções possíveis
+Administradores não escolhem nem alteram a senha de outro usuário por endpoints HTTP. O comando `backend/commands/create_admin.ts` é uma exceção isolada para criar o primeiro Global Admin: executa no backend, recebe a senha diretamente e não depende de convite, SMTP ou endpoint administrativo.
 
-Evoluções posteriores podem incluir:
+## 4. Autorização e Global Admin
 
-- dashboard analítico;
-- Docker e Docker Compose;
-- OpenAPI;
-- testes de frontend;
-- testes end-to-end;
-- armazenamento em objeto;
-- backups e restauração;
-- observabilidade;
-- gestão externa de segredos;
-- implantação com TLS;
-- fila para tarefas assíncronas;
-- relatórios;
-- notificações;
-- trilhas adicionais de auditoria;
-- política formal de retenção.
+### RBAC por clínica
 
-## 23. Decisão de congelamento
+O modelo de autorização clinic-scoped é:
 
-O MVP foi congelado após a conclusão e validação de:
+```text
+Permission <- RolePermission -> Role <- UserClinicRole -> User
+```
 
-- autenticação;
-- autorização;
-- multi-consultório;
-- membros;
-- pacientes;
-- profissionais;
-- agendas;
-- agendamentos;
-- prontuário;
-- anexos;
-- auditoria;
-- cenário demonstrativo;
-- documentação de execução.
+- `Permission` representa uma capacidade granular.
+- `Role` agrega permissões.
+- `UserClinicRole` vincula um usuário, uma clínica e um perfil de acesso.
+- roles de sistema são globais e imutáveis;
+- custom roles pertencem a uma clínica e podem ser criadas, alteradas e ativadas ou inativadas dentro dela.
 
-O estado final e as limitações são registrados em `CONGELAMENTO_MVP.md`.
+Contratos de membership e convite usam `roleId`. `Role.code` continua existindo como identidade interna de roles de sistema, mas não é um campo HTTP para atribuir membership. A autorização não depende de comparar `Role.name`.
+
+As capacidades `roles.manage` e `users.assign_role` são distintas. O `RoleGrantService` limita as permissões e os roles que o ator pode conceder ao subconjunto de sua própria autoridade. A permissão curinga não pode ser atribuída a custom roles. Essas verificações são repetidas pelo backend mesmo quando a interface já filtra as opções.
+
+### Global Admin
+
+Global Admin é uma propriedade explícita da identidade (`isGlobalAdmin`), não um perfil de clínica. Um Global Admin ativo recebe autoridade global com wildcard `*` e não precisa de membership para acessar `/admin` ou executar operações globais autorizadas.
+
+A interface `/admin` permite gerir usuários e clínicas. Convites globais podem incluir zero ou mais memberships iniciais, cada uma formada somente por `clinicId` e `roleId`. A administração detalhada de membros, profissionais e custom roles é reutilizada nas rotas clinic-scoped, evitando uma segunda implementação global.
+
+Não existe promoção ou rebaixamento de Global Admin por UI ou endpoint HTTP. A criação inicial permanece restrita ao comando de bootstrap.
+
+## 5. Isolamento multi-clínica
+
+O contexto operacional de clínica é explícito no pathname `/clinics/[clinicId]/**`. Não existe clínica selecionada como autoridade global em `localStorage`, cookie de clínica ou React context global.
+
+Em cada operação clinic-scoped, o backend revalida:
+
+- usuário e clínica ativos;
+- membership e role ativos, salvo a autoridade global;
+- permissões exigidas pela rota;
+- pertencimento dos recursos à clínica ou a relação autorizadora correspondente.
+
+O seletor e a navegação do frontend derivam a clínica atual da rota. O Global Admin pode entrar na administração de uma clínica ativa a partir de `/admin`, mas continua sujeito às validações do backend e não usa uma clínica fictícia para operar globalmente.
+
+## 6. Separação de identidades e vínculos
+
+Quatro conceitos não são intercambiáveis:
+
+- `User`: identidade de autenticação;
+- `Professional`: identidade clínica, CRM, especialidade e contato;
+- `UserClinicRole`: vínculo de acesso e autorização por clínica;
+- `ClinicProfessional`: vínculo profissional com a clínica, com código local, duração padrão e aceite de agendamentos.
+
+Um Professional pode existir sem User. Vincular uma conta a um profissional não cria nem altera automaticamente seu role. Da mesma forma, membership não transforma um usuário em profissional clínico.
+
+## 7. Pacientes e prontuário
+
+`Patient` é uma identidade global. `PatientClinic` representa o vínculo com cada clínica e pode conter número de prontuário local e status próprios. Cada paciente possui um único `MedicalRecord` global; sua timeline pode reunir entradas de clínicas diferentes quando o acesso atual satisfaz todas as regras.
+
+### Defesa em profundidade no acesso
+
+O acesso ao prontuário combina:
+
+1. permissão clinic-scoped para a operação;
+2. vínculo ativo entre paciente e clínica;
+3. gate relacional médico/paciente quando o ator não possui wildcard ou `medical_records.access_all`;
+4. finalidade declarada para leitura;
+5. registro de acesso.
+
+Para o gate relacional, o usuário precisa estar ligado a um `Professional` ativo na clínica e ter relação qualificante com o paciente por agendamento. Possuir apenas `medical_records.read` não concede acesso indiscriminado a qualquer prontuário.
+
+### Autoria e imutabilidade
+
+Na escrita clínica, o backend deriva a autoria a partir do usuário autenticado e de seu vínculo `ClinicProfessional` ativo. O cliente não escolhe o autor.
+
+Entradas clínicas são append-only. Não há edição destrutiva: uma correção cria nova entrada ligada à anterior e preserva o histórico. Quando informado, `appointmentId` é opcional e só pode vincular um agendamento concluído compatível com paciente, clínica e profissional.
+
+O conteúdo é identificado como Markdown versão 1. A renderização aceita somente um subconjunto de elementos textuais, ignora HTML bruto e mantém fallback de texto para formatos desconhecidos. Essa política reduz a superfície de conteúdo ativo sem perder estrutura clínica e preserva a evolução versionada do formato.
+
+## 8. Agendas e agendamentos
+
+Cada vínculo `ClinicProfessional` pode ter disponibilidades semanais e bloqueios de agenda. A clínica fornece o timezone usado para interpretar horários. Regras de duração, intervalo, disponibilidade e status são validadas no backend.
+
+Agendamentos usam os estados:
+
+- `scheduled`;
+- `confirmed`;
+- `completed`;
+- `cancelled`;
+- `no_show`.
+
+`no_show` é uma extensão deliberada ao conjunto mínimo do requisito original. Confirmação, conclusão, cancelamento, falta e reagendamento são comandos explícitos. Reagendar preserva a consulta anterior como cancelada por reagendamento e cria uma nova consulta agendada.
+
+Conflitos de horário são protegidos por validação de aplicação e constraint temporal no PostgreSQL. Operações críticas usam transação, locks e versão otimista quando aplicável. Permissões separam gestão geral (`*.manage`) e do próprio profissional (`*.manage_own`), sempre confirmadas no backend.
+
+## 9. Anexos clínicos
+
+Anexos do prontuário usam armazenamento privado (`private_fs`):
+
+- a chave física é opaca e gerada pelo servidor;
+- o nome original é mantido somente como metadata;
+- o limite de tamanho é configurável até o teto estrutural de 10 MiB;
+- o upload aceita de um a dois arquivos por requisição e rejeita arquivos vazios ou metadata inválida;
+- tipo declarado normalizado, tamanho e SHA-256 são registrados nos metadados;
+- listagem e download repetem o gate de acesso ao prontuário e registram a finalidade;
+- não existe URL pública permanente.
+
+No download, somente PDF, JPEG e PNG preservam um content type considerado seguro; demais tipos são entregues como `application/octet-stream`. A resposta usa `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e `Cache-Control: private, no-store`. Antes do envio, a interface oferece pré-visualização local para JPEG, PNG e PDF por URLs `blob:` temporárias criadas e revogadas no browser; o PDF usa a renderização nativa do navegador. Esse preview não cria uma URL pública do anexo: o armazenamento permanece privado, o download continua autenticado e conteúdo ativo ou arbitrário não é renderizado inline pelo servidor.
+
+## 10. Auditoria e logging
+
+Operações clínicas e acessos a prontuário/anexos possuem registros auditáveis com usuário, clínica, recurso, ação e finalidade quando aplicável.
+
+Logs de servidor usam eventos e códigos técnicos sanitizados. Senhas, access tokens e tokens brutos de convite não devem ser registrados. Erros desconhecidos seguem o tratamento central sem serialização crua de objetos potencialmente sensíveis para o browser.
+
+## 11. Decisões técnicas
+
+| Decisão | Justificativa |
+| --- | --- |
+| AdonisJS v6 | Oferece estrutura coesa para HTTP, autenticação, VineJS, Lucid, migrations e testes no backend. |
+| Next.js App Router | Combina renderização no servidor, rotas autenticadas e Route Handlers próximos da interface. |
+| BFF Next.js | Mantém a credencial do backend fora do JavaScript, centraliza forwarding e reduz acoplamento do browser ao AdonisJS. |
+| PostgreSQL | Sustenta relações multi-clínica e constraints avançadas de integridade e concorrência. |
+| bcrypt | Usa derivação de senha apropriada em vez de criptografia reversível ou hash rápido. |
+| Onboarding por convite | Garante que o próprio usuário defina a senha e permite expiração, revogação e uso único. |
+| RBAC clinic-scoped | Mantém a autoridade explícita por clínica e permite custom roles sem depender de nomes de perfil. |
+| Prontuário imutável | Preserva rastreabilidade clínica; correções acrescentam histórico em vez de apagar evidência. |
+| Armazenamento privado | Impede acesso por URL pública e força autenticação e autorização em cada download. |
+| Markdown restrito e versionado | Permite estrutura textual controlada sem aceitar HTML arbitrário. |
+
+## 12. Limites e referências
+
+- O backend permanece a fonte de verdade para segurança, ainda que a UI esconda ações sem permissão.
+- A gestão global não inclui um gerenciador autônomo de memberships; vínculos locais são administrados no contexto da clínica.
+- O armazenamento privado atual pode usar filesystem no ambiente local, mas não é exposto como diretório público.
+- Configuração, comandos e variáveis de ambiente estão em [EXECUCAO.md](EXECUCAO.md).
+- Contratos HTTP atuais estão em [API.md](API.md).
+- Campos e comportamentos visíveis estão em [FORMULARIOS.md](FORMULARIOS.md).
+- Evolução estrutural do banco está em [MIGRATIONS.md](MIGRATIONS.md).

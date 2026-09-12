@@ -1,6 +1,18 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { professionalLinkFormSchema } from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,16 +34,12 @@ import {
 type EditProfessionalLinkCardProps = {
   clinicId: string;
   professionalLink: ClinicProfessionalLink;
-  onUpdated: (
-    professionalLink: ClinicProfessionalLink,
-  ) => void;
+  onUpdated: (professionalLink: ClinicProfessionalLink) => void;
   onCancel: () => void;
 };
 
-async function readResponseMessage(response: Response) {
-  const body: unknown = await response
-    .json()
-    .catch(() => null);
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -53,60 +61,40 @@ export function EditProfessionalLinkCard({
 }: EditProfessionalLinkCardProps) {
   const router = useRouter();
 
-  const [formValues, setFormValues] =
-    useState<EditProfessionalLinkFormValues>(() =>
-      professionalLinkToEditForm(professionalLink),
-    );
+  const {
+    control,
+    register,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting: isSaving },
+  } = useForm<EditProfessionalLinkFormValues>({
+    resolver: zodResolver(professionalLinkFormSchema),
+    defaultValues: professionalLinkToEditForm(professionalLink),
+  });
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] = useState<
-    string | null
-  >(null);
-
-  function updateField(
-    field: keyof EditProfessionalLinkFormValues,
-    value: string | boolean,
-  ) {
-    setFormValues((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
-
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
-    setIsSaving(true);
+  async function handleSubmit(formValues: EditProfessionalLinkFormValues) {
     setErrorMessage(null);
 
-    const duration = Number(
-      formValues.defaultAppointmentDurationMinutes,
-    );
+    const duration = Number(formValues.defaultAppointmentDurationMinutes);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/professionals/${encodeURIComponent(
           professionalLink.professional.id,
         )}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            localCode: formValues.localCode,
-            defaultAppointmentDurationMinutes:
-              duration,
-            acceptsAppointments:
-              formValues.acceptsAppointments,
-          }),
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          localCode: formValues.localCode,
+          defaultAppointmentDurationMinutes: duration,
+          acceptsAppointments: formValues.acceptsAppointments,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -115,24 +103,19 @@ export function EditProfessionalLinkCard({
         return;
       }
 
-      if (!response.ok) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+      if (!isSuccessfulResponse(response)) {
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      const body =
-        (await response.json()) as ProfessionalLinkResponse;
+      const body = (await readBrowserJson(
+        response,
+      )) as ProfessionalLinkResponse;
 
       onUpdated(body.professionalLink);
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor",
-      );
-    } finally {
-      setIsSaving(false);
+      setErrorMessage("Não foi possível comunicar com o servidor");
     }
   }
 
@@ -140,61 +123,41 @@ export function EditProfessionalLinkCard({
     <Card>
       <CardHeader>
         <CardTitle>
-          Editar vínculo de{" "}
-          {professionalLink.professional.fullName}
+          Editar vínculo de {professionalLink.professional.fullName}
         </CardTitle>
 
         <CardDescription>
-          Altere as configurações específicas deste
-          profissional na clínica atual.
+          Altere as configurações específicas deste profissional na clínica
+          atual.
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <form
-          className="space-y-6"
-          onSubmit={handleSubmit}
-        >
+        <form className="space-y-6" onSubmit={submitForm(handleSubmit)}>
           <div className="rounded-md border bg-muted/30 p-4">
             <dl className="grid gap-3 text-sm sm:grid-cols-3">
               <div>
-                <dt className="text-muted-foreground">
-                  CRM
-                </dt>
+                <dt className="text-muted-foreground">CRM</dt>
 
                 <dd className="font-medium">
-                  {
-                    professionalLink.professional
-                      .crmState
-                  }{" "}
-                  {
-                    professionalLink.professional
-                      .crmNumber
-                  }
+                  {professionalLink.professional.crmState}{" "}
+                  {professionalLink.professional.crmNumber}
                 </dd>
               </div>
 
               <div>
-                <dt className="text-muted-foreground">
-                  Especialidade
-                </dt>
+                <dt className="text-muted-foreground">Especialidade</dt>
 
                 <dd className="font-medium">
-                  {
-                    professionalLink.professional
-                      .specialty
-                  }
+                  {professionalLink.professional.specialty}
                 </dd>
               </div>
 
               <div>
-                <dt className="text-muted-foreground">
-                  Conta vinculada
-                </dt>
+                <dt className="text-muted-foreground">Conta vinculada</dt>
 
                 <dd className="break-words font-medium">
-                  {professionalLink.professional.user
-                    ?.email ?? "Não vinculada"}
+                  {professionalLink.professional.user?.email ?? "Não vinculada"}
                 </dd>
               </div>
             </dl>
@@ -202,22 +165,30 @@ export function EditProfessionalLinkCard({
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="edit-professional-local-code">
-                Código local
-              </Label>
+              <Label htmlFor="edit-professional-local-code">Código local</Label>
 
-              <Input
-                id="edit-professional-local-code"
-                maxLength={60}
-                disabled={isSaving}
-                value={formValues.localCode}
-                placeholder="Ex.: MED-001"
-                onChange={(event) =>
-                  updateField(
-                    "localCode",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="localCode"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.localCode}
+                    aria-describedby={
+                      errors.localCode
+                        ? "edit-professional-local-code-error"
+                        : undefined
+                    }
+                    id="edit-professional-local-code"
+                    maxLength={60}
+                    disabled={isSaving}
+                    placeholder="Ex.: MED-001"
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"edit-professional-local-code-error"}
+                message={errors.localCode?.message}
               />
             </div>
 
@@ -226,66 +197,67 @@ export function EditProfessionalLinkCard({
                 Duração padrão da consulta
               </Label>
 
-              <Input
-                id="edit-professional-duration"
-                type="number"
-                required
-                min={5}
-                max={480}
-                step={1}
-                disabled={isSaving}
-                value={
-                  formValues.defaultAppointmentDurationMinutes
-                }
-                onChange={(event) =>
-                  updateField(
-                    "defaultAppointmentDurationMinutes",
-                    event.target.value,
-                  )
-                }
+              <Controller
+                control={control}
+                name="defaultAppointmentDurationMinutes"
+                render={({ field }) => (
+                  <Input
+                    {...field}
+                    aria-invalid={!!errors.defaultAppointmentDurationMinutes}
+                    aria-describedby={
+                      errors.defaultAppointmentDurationMinutes
+                        ? "edit-professional-duration-error"
+                        : undefined
+                    }
+                    id="edit-professional-duration"
+                    type="number"
+                    required
+                    min={5}
+                    max={480}
+                    step={1}
+                    disabled={isSaving}
+                  />
+                )}
+              />
+              <FormFieldError
+                id={"edit-professional-duration-error"}
+                message={errors.defaultAppointmentDurationMinutes?.message}
               />
             </div>
 
             <div className="space-y-2 md:col-span-2">
               <label className="flex items-center gap-3 text-sm">
                 <input
+                  {...register("acceptsAppointments")}
+                  id={"professionalLinkFormSchema-acceptsAppointments"}
+                  aria-invalid={!!errors.acceptsAppointments}
+                  aria-describedby={
+                    errors.acceptsAppointments
+                      ? "professionalLinkFormSchema-acceptsAppointments-error"
+                      : undefined
+                  }
                   type="checkbox"
-                  checked={
-                    formValues.acceptsAppointments
-                  }
                   disabled={isSaving}
-                  onChange={(event) =>
-                    updateField(
-                      "acceptsAppointments",
-                      event.target.checked,
-                    )
-                  }
+                />
+                <FormFieldError
+                  id={"professionalLinkFormSchema-acceptsAppointments-error"}
+                  message={errors.acceptsAppointments?.message}
                 />
 
-                <span>
-                  Este profissional aceita agendamentos
-                </span>
+                <span>Este profissional aceita agendamentos</span>
               </label>
             </div>
           </div>
 
           {errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
 
           <div className="flex flex-wrap gap-3">
-            <Button
-              type="submit"
-              disabled={isSaving}
-            >
-              {isSaving
-                ? "Salvando..."
-                : "Salvar alterações"}
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Salvando..." : "Salvar alterações"}
             </Button>
 
             <Button

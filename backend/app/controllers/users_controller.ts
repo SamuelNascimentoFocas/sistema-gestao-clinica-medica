@@ -1,12 +1,10 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
+import { listUsersValidator, updateUserValidator } from '#validators/user'
 import {
-  createUserValidator,
-  listUsersValidator,
-  updateUserStatusValidator,
-  updateUserValidator,
-} from '#validators/user'
-import { isUserLastActiveClinicAdmin } from '#services/clinic_membership_rules'
+  serializeUsersOnboardingStatus,
+  serializeUserWithLatestOnboardingStatus,
+} from '#services/user_onboarding_status_service'
 
 async function emailAlreadyExists(emailNormalized: string, exceptUserId?: string) {
   const query = User.query().where('email_normalized', emailNormalized)
@@ -16,10 +14,6 @@ async function emailAlreadyExists(emailNormalized: string, exceptUserId?: string
   }
 
   return Boolean(await query.first())
-}
-
-function passwordExceedsBcryptLimit(password: string) {
-  return Buffer.byteLength(password, 'utf8') > 72
 }
 
 export default class UsersController {
@@ -50,39 +44,8 @@ export default class UsersController {
     const users = await query.paginate(page, perPage)
 
     return response.ok({
-      data: users.all().map((user) => user.serialize()),
+      data: await serializeUsersOnboardingStatus(users.all()),
       meta: users.getMeta(),
-    })
-  }
-
-  async store({ request, response }: HttpContext) {
-    const payload = await request.validateUsing(createUserValidator)
-
-    if (passwordExceedsBcryptLimit(payload.password)) {
-      return response.unprocessableEntity({
-        message: 'A senha deve possuir no máximo 72 bytes',
-      })
-    }
-
-    const emailNormalized = payload.email.toLowerCase()
-
-    if (await emailAlreadyExists(emailNormalized)) {
-      return response.conflict({
-        message: 'Já existe um usuário cadastrado com este e-mail',
-      })
-    }
-
-    const user = await User.create({
-      fullName: payload.fullName,
-      email: payload.email,
-      emailNormalized,
-      passwordHash: payload.password,
-      isGlobalAdmin: false,
-      isActive: true,
-    })
-
-    return response.created({
-      user: user.serialize(),
     })
   }
 
@@ -96,7 +59,7 @@ export default class UsersController {
     }
 
     return response.ok({
-      user: user.serialize(),
+      user: await serializeUserWithLatestOnboardingStatus(user),
     })
   }
 
@@ -114,12 +77,6 @@ export default class UsersController {
     if (Object.keys(payload).length === 0) {
       return response.badRequest({
         message: 'Informe pelo menos um campo para atualização',
-      })
-    }
-
-    if (payload.password && passwordExceedsBcryptLimit(payload.password)) {
-      return response.unprocessableEntity({
-        message: 'A senha deve possuir no máximo 72 bytes',
       })
     }
 
@@ -143,52 +100,10 @@ export default class UsersController {
       user.fullName = payload.fullName
     }
 
-    if (payload.password !== undefined) {
-      user.passwordHash = payload.password
-    }
-
     await user.save()
 
     return response.ok({
-      user: user.serialize(),
-    })
-  }
-
-  async updateStatus({ auth, params, request, response }: HttpContext) {
-    const authenticatedUser = auth.getUserOrFail()
-    const user = await User.find(params.id)
-
-    if (!user) {
-      return response.notFound({
-        message: 'Usuário não encontrado',
-      })
-    }
-
-    const { isActive } = await request.validateUsing(updateUserStatusValidator)
-
-    if (!isActive && authenticatedUser.id === user.id) {
-      return response.conflict({
-        message: 'Você não pode inativar seu próprio usuário',
-      })
-    }
-
-    if (!isActive && user.isGlobalAdmin) {
-      return response.conflict({
-        message: 'Um Administrador Geral não pode ser inativado por esta rota',
-      })
-    }
-
-    if (!isActive && (await isUserLastActiveClinicAdmin(user.id))) {
-      return response.conflict({
-        message: 'O último Administrador de Consultório ativo não pode ter seu usuário inativado',
-      })
-    }
-
-    user.isActive = isActive
-    await user.save()
-
-    return response.ok({
-      user: user.serialize(),
+      user: await serializeUserWithLatestOnboardingStatus(user),
     })
   }
 }

@@ -1,9 +1,11 @@
 import type { AuthUser } from "@/types/auth";
+import { cache } from "react";
 import { getSessionToken } from "@/lib/server/auth-session";
 import {
   backendApiFetch,
   readBackendResponse,
 } from "@/lib/server/backend-api";
+import { logServerError } from "@/lib/server/server-logging";
 
 function parseAuthenticatedUser(body: unknown): AuthUser | null {
   if (typeof body !== "object" || body === null) {
@@ -33,7 +35,7 @@ function parseAuthenticatedUser(body: unknown): AuthUser | null {
   return user as AuthUser;
 }
 
-export async function getCurrentUser(): Promise<AuthUser | null> {
+export const getCurrentUser = cache(async function getCurrentUser(): Promise<AuthUser | null> {
   const token = await getSessionToken();
 
   if (!token) {
@@ -60,8 +62,8 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
     return user;
   } catch (error) {
-    console.error("Falha ao validar a sessão do usuário", error);
+    logServerError("auth.current_user_validation_failed", error);
 
     return null;
   }
-}
+});

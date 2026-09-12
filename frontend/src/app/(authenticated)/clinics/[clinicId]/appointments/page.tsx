@@ -18,7 +18,6 @@ import {
   localDateStartToUtcIso,
 } from "@/lib/appointments/appointment-date";
 import { requireClinicPermissions } from "@/lib/server/clinic-authorization";
-import { getClinicAppointments } from "@/lib/server/clinic-appointments";
 import { getClinicPatients } from "@/lib/server/clinic-patients";
 import { getClinicProfessionals } from "@/lib/server/clinic-professionals";
 import {
@@ -26,9 +25,9 @@ import {
   type AppointmentStatus,
 } from "@/types/appointment";
 import { CreateAppointmentCard } from "@/components/appointments/create-appointment-card";
+import { ClinicAppointmentsTable } from "@/components/appointments/clinic-appointments-table";
 import { hasAnyPermission } from "@/lib/auth/permissions";
 import { getCurrentUser } from "@/lib/server/current-user";
-import { AppointmentListItem } from "@/components/appointments/appointment-list-item";
 
 type SearchParams = Record<
   string,
@@ -40,14 +39,6 @@ type PageProps = {
     clinicId: string;
   }>;
   searchParams: Promise<SearchParams>;
-};
-
-type AppointmentPageFilters = {
-  fromDate: string;
-  toDate: string;
-  status?: AppointmentStatus;
-  patientClinicId?: string;
-  clinicProfessionalId?: string;
 };
 
 export const metadata = {
@@ -84,40 +75,6 @@ function parseAppointmentStatus(
   )
     ? (value as AppointmentStatus)
     : undefined;
-}
-
-function buildAppointmentsHref(
-  clinicId: string,
-  filters: AppointmentPageFilters,
-  page: number,
-) {
-  const searchParams = new URLSearchParams({
-    fromDate: filters.fromDate,
-    toDate: filters.toDate,
-    page: String(page),
-  });
-
-  if (filters.status) {
-    searchParams.set("status", filters.status);
-  }
-
-  if (filters.patientClinicId) {
-    searchParams.set(
-      "patientClinicId",
-      filters.patientClinicId,
-    );
-  }
-
-  if (filters.clinicProfessionalId) {
-    searchParams.set(
-      "clinicProfessionalId",
-      filters.clinicProfessionalId,
-    );
-  }
-
-  return `/clinics/${encodeURIComponent(
-    clinicId,
-  )}/appointments?${searchParams.toString()}`;
 }
 
 export default async function AppointmentsPage({
@@ -187,6 +144,11 @@ export default async function AppointmentsPage({
   const canChangeStatusOwn = hasAnyPermission(
     context.access.permissions,
     ["appointments.change_status_own"],
+  );
+
+  const canCreateMedicalRecordEntries = hasAnyPermission(
+    context.access.permissions,
+    ["medical_records.create"],
   );
 
   const canRescheduleAll =
@@ -287,51 +249,6 @@ export default async function AppointmentsPage({
     rangeError =
       "O período consultado não pode ultrapassar 31 dias.";
   }
-
-  const filters: AppointmentPageFilters = {
-    fromDate,
-    toDate,
-    status,
-    patientClinicId,
-    clinicProfessionalId,
-  };
-
-  const appointmentsResponse = rangeError
-    ? null
-    : await getClinicAppointments(clinicId, {
-        from: localDateStartToUtcIso(
-          fromDate,
-          context.clinic.timezone,
-        ),
-        to: localDateStartToUtcIso(
-          addDaysToDateInput(toDate, 1),
-          context.clinic.timezone,
-        ),
-        page,
-        perPage: 20,
-        status,
-        patientClinicId,
-        clinicProfessionalId,
-      });
-
-  if (!rangeError && !appointmentsResponse) {
-    notFound();
-  }
-
-  const appointments =
-    appointmentsResponse?.data ?? [];
-
-  const meta = appointmentsResponse?.meta ?? {
-    total: 0,
-    perPage: 20,
-    currentPage: 1,
-    lastPage: 1,
-    firstPage: 1,
-    firstPageUrl: null,
-    lastPageUrl: null,
-    nextPageUrl: null,
-    previousPageUrl: null,
-  };
 
   const currentTimeIso =
     new Date().toISOString();
@@ -526,121 +443,38 @@ export default async function AppointmentsPage({
         <Card>
           <CardHeader>
             <CardTitle>Agenda do período</CardTitle>
-
-            <CardDescription>
-              {meta.total === 1
-                ? "1 agendamento encontrado."
-                : `${meta.total} agendamentos encontrados.`}
-            </CardDescription>
           </CardHeader>
 
           <CardContent>
-            {appointments.length === 0 ? (
-              <div className="py-8 text-center">
-                <p className="font-medium">
-                  Nenhum agendamento encontrado
-                </p>
-
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Ajuste o período ou os filtros para
-                  consultar outros registros.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {appointments.map((appointment) => {
-                  const isFinalStatus = [
-                    "completed",
-                    "cancelled",
-                    "no_show",
-                  ].includes(appointment.status);
-
-                  const isOwnAppointment =
-                    appointment.clinicProfessional
-                      .professional.userId ===
-                    currentUser.id;
-
-                  const canRescheduleAppointment =
-                    !isFinalStatus &&
-                    (canRescheduleAll ||
-                      (canRescheduleOwn &&
-                        isOwnAppointment));
-
-                  const canEditAppointment =
-                    !isFinalStatus &&
-                    (canUpdateAll ||
-                      (canUpdateOwn &&
-                        isOwnAppointment));
-
-                  const canChangeAppointmentStatus =
-                    canChangeStatusAll ||
-                    (canChangeStatusOwn &&
-                      isOwnAppointment);
-
-                  return (
-                    <AppointmentListItem
-                      key={appointment.id}
-                      clinicId={clinicId}
-                      clinicTimezone={
-                        context.clinic.timezone
-                      }
-                      initialAppointment={appointment}
-                      patients={availablePatients}
-                      professionals={
-                        availableProfessionals
-                      }
-                      canEdit={canEditAppointment}
-                      canChangeStatus={
-                        canChangeAppointmentStatus
-                      }
-                      canReschedule={
-                        canRescheduleAppointment
-                      }
-                      currentTimeIso={
-                        currentTimeIso
-                      }
-                    />
-                  );
-                })}
-              </div>
-            )}
-
-            {meta.lastPage > 1 ? (
-              <div className="mt-6 flex items-center justify-between border-t pt-4">
-                <p className="text-sm text-muted-foreground">
-                  Página {meta.currentPage} de{" "}
-                  {meta.lastPage}
-                </p>
-
-                <div className="flex gap-3">
-                  {meta.currentPage > 1 ? (
-                    <Link
-                      href={buildAppointmentsHref(
-                        clinicId,
-                        filters,
-                        meta.currentPage - 1,
-                      )}
-                      className="border-input bg-background hover:bg-accent inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium"
-                    >
-                      Anterior
-                    </Link>
-                  ) : null}
-
-                  {meta.currentPage < meta.lastPage ? (
-                    <Link
-                      href={buildAppointmentsHref(
-                        clinicId,
-                        filters,
-                        meta.currentPage + 1,
-                      )}
-                      className="border-input bg-background hover:bg-accent inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium"
-                    >
-                      Próxima
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
+            <ClinicAppointmentsTable
+              clinicId={clinicId}
+              clinicTimezone={context.clinic.timezone}
+              page={page}
+              query={{
+                from: localDateStartToUtcIso(
+                  fromDate,
+                  context.clinic.timezone,
+                ),
+                to: localDateStartToUtcIso(
+                  addDaysToDateInput(toDate, 1),
+                  context.clinic.timezone,
+                ),
+                status,
+                patientClinicId,
+                clinicProfessionalId,
+              }}
+              patients={availablePatients}
+              professionals={availableProfessionals}
+              currentUserId={currentUser.id}
+              currentTimeIso={currentTimeIso}
+              canUpdateAll={canUpdateAll}
+              canUpdateOwn={canUpdateOwn}
+              canChangeStatusAll={canChangeStatusAll}
+              canChangeStatusOwn={canChangeStatusOwn}
+              canRescheduleAll={canRescheduleAll}
+              canRescheduleOwn={canRescheduleOwn}
+              canCreateMedicalRecordEntries={canCreateMedicalRecordEntries}
+            />
           </CardContent>
         </Card>
       )}

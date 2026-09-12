@@ -1,31 +1,7 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { createBearerToken } from '#tests/helpers/auth'
 import { test } from '@japa/runner'
 import testUtils from '@adonisjs/core/services/test_utils'
-import User from '#models/user'
-
-async function createUser({
-  email,
-  isGlobalAdmin,
-  isActive = true,
-}: {
-  email: string
-  isGlobalAdmin: boolean
-  isActive?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário Teste',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
 
 test.group('Users', (group) => {
   group.each.setup(() => testUtils.db().withGlobalTransaction())
@@ -37,10 +13,11 @@ test.group('Users', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const regularUser = await createUser({
+    const regularUser = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'regular.user@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
     const token = await createBearerToken(regularUser)
 
@@ -56,33 +33,15 @@ test.group('Users', (group) => {
   })
 
   test('allows a global administrator to manage users', async ({ client, assert }) => {
-    const admin = await createUser({
-      email: 'users.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'users.admin@example.com' })
+      .create()
 
     const token = await createBearerToken(admin)
-
-    const createResponse = await client
-      .post('/api/v1/users')
-      .header('Accept', 'application/json')
-      .header('Authorization', `Bearer ${token}`)
-      .json({
-        fullName: 'Recepcionista Modelo',
-        email: 'Recepcionista.Modelo@example.com',
-        password: 'InitialPassword!123',
-      })
-
-    createResponse.assertStatus(201)
-
-    const createdUser = createResponse.body().user
-
-    assert.equal(createdUser.fullName, 'Recepcionista Modelo')
-    assert.equal(createdUser.email, 'Recepcionista.Modelo@example.com')
-    assert.isFalse(createdUser.isGlobalAdmin)
-    assert.isTrue(createdUser.isActive)
-    assert.isUndefined(createdUser.passwordHash)
-    assert.isUndefined(createdUser.emailNormalized)
+    const createdUser = await UserFactory.merge({
+      fullName: 'Recepcionista Modelo',
+      email: 'Recepcionista.Modelo@example.com',
+    }).create()
 
     const listResponse = await client
       .get('/api/v1/users?search=Recepcionista&page=1&perPage=10')
@@ -100,6 +59,8 @@ test.group('Users', (group) => {
 
     showResponse.assertStatus(200)
     assert.equal(showResponse.body().user.id, createdUser.id)
+    assert.isUndefined(showResponse.body().user.passwordHash)
+    assert.isUndefined(showResponse.body().user.emailNormalized)
 
     const updateResponse = await client
       .patch(`/api/v1/users/${createdUser.id}`)
@@ -108,7 +69,6 @@ test.group('Users', (group) => {
       .json({
         fullName: 'Recepcionista Atualizada',
         email: 'recepcionista.atualizada@example.com',
-        password: 'UpdatedPassword!123',
       })
 
     updateResponse.assertStatus(200)
@@ -119,7 +79,7 @@ test.group('Users', (group) => {
       .header('Accept', 'application/json')
       .json({
         email: 'RECEPCIONISTA.ATUALIZADA@example.com',
-        password: 'UpdatedPassword!123',
+        password: 'TestPassword!123',
       })
 
     loginResponse.assertStatus(200)
@@ -140,55 +100,102 @@ test.group('Users', (group) => {
       .header('Accept', 'application/json')
       .json({
         email: 'recepcionista.atualizada@example.com',
-        password: 'UpdatedPassword!123',
+        password: 'TestPassword!123',
       })
 
     inactiveLoginResponse.assertStatus(403)
   })
 
-  test('rejects duplicate email, invalid data, and self-deactivation', async ({ client }) => {
-    const admin = await createUser({
-      email: 'validation.users.admin@example.com',
-      isGlobalAdmin: true,
-    })
-
+  test('removes legacy creation and rejects administrative password changes atomically', async ({
+    client,
+    assert,
+  }) => {
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'validation.users.admin@example.com' })
+      .create()
     const token = await createBearerToken(admin)
+    const target = await UserFactory.merge({
+      fullName: 'Usuário Preservado',
+      email: 'preserved.user@example.com',
+    }).create()
+    const originalPasswordHash = target.passwordHash
 
-    const firstResponse = await client
+    const removedCreateResponse = await client
       .post('/api/v1/users')
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
-        fullName: 'Primeiro Usuário',
-        email: 'duplicate.user@example.com',
+        fullName: 'Usuário Legado',
+        email: 'legacy.user@example.com',
         password: 'InitialPassword!123',
       })
+    removedCreateResponse.assertStatus(404)
 
-    firstResponse.assertStatus(201)
+    const passwordResponse = await client
+      .patch(`/api/v1/users/${target.id}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ password: 'UpdatedPassword!123' })
+    passwordResponse.assertStatus(422)
 
-    const duplicateResponse = await client
-      .post('/api/v1/users')
+    const confirmationResponse = await client
+      .patch(`/api/v1/users/${target.id}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ passwordConfirmation: 'UpdatedPassword!123' })
+    confirmationResponse.assertStatus(422)
+
+    const mixedResponse = await client
+      .patch(`/api/v1/users/${target.id}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ fullName: 'Não Deve Persistir', password: 'UpdatedPassword!123' })
+    mixedResponse.assertStatus(422)
+
+    const mixedConfirmationResponse = await client
+      .patch(`/api/v1/users/${target.id}`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
-        fullName: 'Segundo Usuário',
-        email: 'DUPLICATE.USER@example.com',
-        password: 'AnotherPassword!123',
+        email: 'must.not.persist@example.com',
+        passwordConfirmation: 'UpdatedPassword!123',
       })
+    mixedConfirmationResponse.assertStatus(422)
 
+    await target.refresh()
+    assert.equal(target.fullName, 'Usuário Preservado')
+    assert.equal(target.email, 'preserved.user@example.com')
+    assert.equal(target.passwordHash, originalPasswordHash)
+  })
+
+  test('rejects duplicate email, invalid data, and self-deactivation', async ({ client }) => {
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'validation.users.admin@example.com' })
+      .create()
+    const firstUser = await UserFactory.merge({
+      fullName: 'Primeiro Usuário',
+      email: 'duplicate.user@example.com',
+    }).create()
+    const secondUser = await UserFactory.merge({
+      fullName: 'Segundo Usuário',
+      email: 'second.user@example.com',
+    }).create()
+    const token = await createBearerToken(admin)
+
+    const duplicateResponse = await client
+      .patch(`/api/v1/users/${secondUser.id}`)
+      .header('Accept', 'application/json')
+      .header('Authorization', `Bearer ${token}`)
+      .json({ email: firstUser.email.toUpperCase() })
     duplicateResponse.assertStatus(409)
-    duplicateResponse.assertBodyContains({
-      message: 'Já existe um usuário cadastrado com este e-mail',
-    })
 
     const invalidResponse = await client
-      .post('/api/v1/users')
+      .patch(`/api/v1/users/${secondUser.id}`)
       .header('Accept', 'application/json')
       .header('Authorization', `Bearer ${token}`)
       .json({
         fullName: 'A',
         email: 'email-invalido',
-        password: 'curta',
       })
 
     invalidResponse.assertStatus(422)

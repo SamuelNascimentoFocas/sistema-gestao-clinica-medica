@@ -16,20 +16,18 @@ Prefixo principal:
 /api/v1
 ```
 
-Inventário confirmado:
+Snapshot do contrato registrado em `backend/tests/contracts/http_contracts.fixture.ts`:
 
 ```text
-59 rotas
-```
-
-Distribuição por método:
-
-```text
-GET:     23
-POST:    18
-PATCH:   17
+TOTAL:   70
+GET:     27
+POST:    23
+PATCH:   19
 DELETE:   1
 ```
+
+Essas contagens descrevem o estado atual da API e devem ser revalidadas quando o
+contrato de rotas mudar.
 
 A rota `/` é uma verificação pública simples da API. As demais rotas seguem os grupos de autenticação, administração global ou contexto de consultório descritos abaixo.
 
@@ -62,6 +60,10 @@ O administrador global também pode acessar rotas de consultório. Nesse caso, r
 ```
 
 e não precisa possuir vínculo local com o consultório.
+
+Não existe endpoint HTTP para promover ou rebaixar um usuário como administrador
+global. A criação inicial desse tipo de conta ocorre pelo comando operacional de
+bootstrap, fora da API.
 
 ## Autorização por consultório
 
@@ -191,6 +193,41 @@ Autenticação: obrigatória.
 
 Finalidade: encerrar a sessão atual.
 
+### `POST /api/v1/invitations/validate`
+
+Autenticação: não exigida.
+
+Body:
+
+```json
+{
+  "token": "<token recebido por e-mail>"
+}
+```
+
+Finalidade: validar, sem consumir, um token de convite recebido exclusivamente no corpo.
+Tokens inválidos, expirados, revogados ou consumidos recebem a mesma resposta pública.
+
+### `POST /api/v1/invitations/accept`
+
+Autenticação: não exigida.
+
+Body:
+
+```json
+{
+  "token": "<token recebido por e-mail>",
+  "password": "<nova senha>",
+  "passwordConfirmation": "<confirmação>"
+}
+```
+
+A senha deve possuir no mínimo 12 caracteres e no máximo 72 bytes UTF-8; a
+confirmação deve ser idêntica.
+
+Finalidade: definir e confirmar a senha inicial, consumir o convite em uso único e então
+permitir que o usuário utilize o login normal. Não cria sessão automaticamente.
+
 ---
 
 ## Consultórios — administração global
@@ -239,9 +276,34 @@ auth + globalAdmin
 
 Finalidade: listar usuários.
 
-### `POST /api/v1/users`
+### `POST /api/v1/users/invitations`
 
-Finalidade: criar um usuário.
+Finalidade: criar um usuário sem senha e enviar um convite. Pode receber vínculos por
+`clinicId` + `roleId`; as mesmas regras de escopo e concessão de perfil são aplicadas.
+A resposta contém somente status seguro do onboarding, nunca token ou digest.
+
+Body:
+
+```json
+{
+  "fullName": "Nome do usuário",
+  "email": "usuario@example.com",
+  "memberships": [
+    {
+      "clinicId": "<uuid da clínica>",
+      "roleId": "<uuid do perfil>"
+    }
+  ]
+}
+```
+
+`memberships` é opcional e não pode repetir a mesma clínica. `password`,
+`passwordConfirmation` e `isGlobalAdmin` são explicitamente rejeitados.
+
+### `POST /api/v1/users/:userId/invitations/resend`
+
+Finalidade: revogar o convite pendente e enviar um novo convite para usuário ativo que
+ainda não configurou senha. Não altera vínculos, perfis ou status do usuário.
 
 ### `GET /api/v1/users/:id`
 
@@ -253,7 +315,9 @@ Parâmetros:
 
 ### `PATCH /api/v1/users/:id`
 
-Finalidade: atualizar os dados de um usuário.
+Finalidade: atualizar `fullName` e/ou `email`. Um body vazio é rejeitado. Os campos
+`password`, `passwordConfirmation` e `passwordHash` são explicitamente rejeitados;
+o administrador não pode definir nem substituir a credencial de outra conta.
 
 ### `PATCH /api/v1/users/:id/status`
 
@@ -279,6 +343,9 @@ Finalidade: listar vínculos entre usuários, consultórios e perfis.
 
 Finalidade: criar um vínculo global.
 
+O perfil deve ser selecionado exclusivamente por `roleId` (UUID), tanto para
+perfis do sistema quanto para perfis personalizados.
+
 ### `GET /api/v1/clinic-memberships/:id`
 
 Finalidade: consultar um vínculo.
@@ -290,6 +357,8 @@ Parâmetros:
 ### `PATCH /api/v1/clinic-memberships/:id`
 
 Finalidade: atualizar um vínculo.
+
+O novo perfil deve ser informado exclusivamente por `roleId`.
 
 ### `PATCH /api/v1/clinic-memberships/:id/status`
 
@@ -321,7 +390,34 @@ users.read
 
 Finalidade: listar membros do consultório.
 
-### `POST /api/v1/clinics/:clinicId/members`
+Query params opcionais:
+
+- `page`: página atual, com default `1`;
+- `perPage`: quantidade por página, com default `20` e máximo `100`;
+- `search`: busca textual por nome ou e-mail do usuário;
+- `roleId`: UUID do perfil, do sistema ou personalizado, disponível no consultório;
+- `isActive`: status do vínculo (`true` ou `false`).
+
+A resposta usa o envelope paginado do Lucid:
+
+```json
+{
+  "data": [],
+  "meta": {
+    "total": 0,
+    "perPage": 20,
+    "currentPage": 1,
+    "lastPage": 1
+  }
+}
+```
+
+Os itens de `data` preservam o vínculo e as relações `user` e `role`. O objeto `user`
+inclui os metadados seguros de onboarding `passwordConfigured`, `invitationStatus`,
+`invitationSentAt` e `invitationExpiresAt`, sem expor senha, hash ou token. A ordenação é
+determinística por `created_at ASC, id ASC`, sempre isolada por `clinicId`.
+
+### `POST /api/v1/clinics/:clinicId/members/invitations`
 
 Permissões exigidas em conjunto:
 
@@ -330,7 +426,33 @@ users.create
 users.assign_role
 ```
 
-Finalidade: criar um usuário local e seu vínculo com o consultório.
+Finalidade: criar usuário sem senha, vínculo local por `roleId` e convite. A senha não é
+aceita neste endpoint e o `RoleGrantService` continua sendo a autoridade da atribuição.
+O usuário define a própria senha ao aceitar o convite. A definição direta de senha permanece
+restrita ao comando operacional de bootstrap do primeiro Administrador Geral, fora da API HTTP.
+
+Body:
+
+```json
+{
+  "fullName": "Nome do usuário",
+  "email": "usuario@example.com",
+  "roleId": "<uuid do perfil>"
+}
+```
+
+`password`, `passwordConfirmation` e `isGlobalAdmin` são explicitamente rejeitados.
+
+### `POST /api/v1/clinics/:clinicId/members/:membershipId/invitations/resend`
+
+Permissão:
+
+```text
+users.create
+```
+
+Finalidade: reenviar convite para o usuário do vínculo pertencente ao consultório. Não
+altera o vínculo nem o perfil.
 
 ### `PATCH /api/v1/clinics/:clinicId/members/:membershipId/role`
 
@@ -342,7 +464,13 @@ users.assign_role
 
 Finalidade: alterar o perfil de um membro do consultório.
 
+O novo perfil deve ser informado exclusivamente por `roleId`.
+
 A operação respeita a proteção do último administrador local efetivo.
+
+`Role.code` permanece uma identidade interna persistida dos perfis, inclusive dos
+perfis predefinidos. Ele não é aceito como seletor nas operações ou filtros de
+membership; clientes devem usar o UUID `roleId`.
 
 ### `PATCH /api/v1/clinics/:clinicId/members/:membershipId/status`
 
@@ -360,6 +488,134 @@ Parâmetros usados nesta seção:
 
 - `clinicId`: UUID do consultório;
 - `membershipId`: UUID do vínculo.
+
+---
+
+## Perfis e permissões do consultório
+
+Perfis do sistema são globais e imutáveis. Perfis personalizados pertencem a uma
+única clínica. As rotas abaixo são clinic-scoped: usuários comuns precisam do
+vínculo e da permissão indicada; o administrador global usa o contexto curinga e
+não depende de membership.
+
+`Role.code` é identidade interna do domínio. Escritas e filtros de membership usam
+exclusivamente `roleId`; `roleCode` não é input HTTP para atribuição de perfil.
+
+### `GET /api/v1/clinics/:clinicId/roles/assignable`
+
+Permissão:
+
+```text
+users.assign_role
+```
+
+Finalidade: listar em `{ data }` os perfis ativos do sistema e os perfis
+personalizados ativos da clínica que o ator pode atribuir. Para um usuário
+clinic-scoped, todas as permissões do perfil precisam estar contidas em sua própria
+autoridade; o administrador global pode consultar todos os perfis ativos visíveis
+na clínica.
+
+### `GET /api/v1/clinics/:clinicId/roles/permissions`
+
+Permissão:
+
+```text
+roles.manage
+```
+
+Finalidade: listar em `{ data }` as permissões ativas que podem integrar um perfil
+personalizado. A permissão curinga e permissões não atribuíveis pelo catálogo não
+são oferecidas.
+
+### `GET /api/v1/clinics/:clinicId/roles`
+
+Permissão:
+
+```text
+roles.manage
+```
+
+Finalidade: listar em `{ data }` os perfis do sistema e os perfis personalizados
+pertencentes à clínica, com suas permissões. A listagem administrativa inclui
+perfis ativos e inativos.
+
+### `POST /api/v1/clinics/:clinicId/roles`
+
+Permissão:
+
+```text
+roles.manage
+```
+
+Body:
+
+```json
+{
+  "name": "Nome do perfil",
+  "description": "Descrição opcional",
+  "permissionCodes": ["patients.read"]
+}
+```
+
+Finalidade: criar um perfil personalizado ativo na clínica. `name` possui de 3 a
+120 caracteres, `description` é opcional/nula e limitada a 255 caracteres, e
+`permissionCodes` é uma lista distinta. Nomes reservados por perfis do sistema e
+nomes personalizados duplicados na clínica são rejeitados. Retorna `{ role }` com
+status `201`.
+
+### `GET /api/v1/clinics/:clinicId/roles/:roleId`
+
+Permissão:
+
+```text
+roles.manage
+```
+
+Finalidade: consultar em `{ role }` um perfil do sistema ou um perfil
+personalizado pertencente à clínica.
+
+### `PATCH /api/v1/clinics/:clinicId/roles/:roleId`
+
+Permissão:
+
+```text
+roles.manage
+```
+
+Body: o mesmo contrato completo de `name`, `description` e `permissionCodes` usado
+na criação.
+
+Finalidade: atualizar somente um perfil personalizado pertencente à clínica.
+Perfis do sistema são imutáveis.
+
+### `PATCH /api/v1/clinics/:clinicId/roles/:roleId/status`
+
+Permissão:
+
+```text
+roles.manage
+```
+
+Body:
+
+```json
+{
+  "isActive": true
+}
+```
+
+Finalidade: ativar ou inativar um perfil personalizado da clínica. Perfis do
+sistema são imutáveis. A reativação volta a validar se o ator pode conceder todas
+as permissões contidas no perfil.
+
+### Limites de concessão
+
+`roles.manage` autoriza administrar perfis personalizados; `users.assign_role`
+autoriza atribuir um perfil a um vínculo. As permissões são responsabilidades
+distintas. O `RoleGrantService` rejeita a permissão curinga, permissões fora do
+catálogo atribuível, permissões inexistentes/inativas e qualquer conjunto que
+exceda a autoridade do ator. As mesmas verificações protegem criação, atualização,
+reativação e atribuição, impedindo escalada por perfil personalizado.
 
 ---
 
@@ -424,6 +680,14 @@ Parâmetros usados nesta seção:
 
 ## Prontuário eletrônico
 
+As permissões indicadas nas rotas desta seção não bastam isoladamente. O backend
+também aplica autorização sobre o paciente solicitado. `*` e
+`medical_records.access_all` liberam o escopo completo; nos demais casos, o usuário
+deve estar associado a um profissional ativo, com vínculo profissional ativo na
+clínica e ao menos um agendamento `scheduled`, `confirmed` ou `completed` com o
+vínculo do paciente nessa clínica. A mesma proteção alcança timeline, entrada,
+correção e anexos.
+
 ### `GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record`
 
 Permissões exigidas em conjunto:
@@ -450,6 +714,25 @@ Finalidade: criar uma entrada clínica no prontuário.
 
 A autoria e o contexto profissional são derivados no backend.
 
+Body:
+
+```json
+{
+  "appointmentId": "<uuid opcional ou null>",
+  "entryTypeCode": "consultation",
+  "content": "Conteúdo clínico"
+}
+```
+
+`entryTypeCode` aceita `consultation`, `evolution` ou `other`; `content` possui de
+1 a 20.000 caracteres. `appointmentId` é opcional/nulo. Quando informado, deve
+identificar um agendamento `completed` da mesma clínica, paciente e profissional
+derivado. Concluir um agendamento não cria uma entrada automaticamente.
+
+A resposta serializada identifica `contentFormat` como `markdown` e
+`contentFormatVersion` como `1`. O frontend oficial renderiza somente um subconjunto
+restrito e versionado de Markdown; HTML bruto não é renderizado como HTML.
+
 ### `GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId`
 
 Permissões exigidas em conjunto:
@@ -474,7 +757,8 @@ medical_records.correct
 
 Finalidade: registrar uma correção vinculada a uma entrada anterior.
 
-A correção não sobrescreve o registro original.
+A correção recebe somente `content`, usa a mesma representação Markdown
+restrita/versionada na resposta e não sobrescreve o registro original.
 
 Parâmetros usados nesta seção:
 
@@ -497,7 +781,9 @@ attachments.read
 
 Finalidade: listar anexos disponíveis de uma entrada.
 
-A operação gera registro de auditoria.
+A operação exige `purposeCode`, aceita `purposeNote`, usa paginação e gera registro
+de auditoria. A resposta contém metadados públicos do anexo, nunca chave privada,
+hash de armazenamento ou URL pública.
 
 ### `POST /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments`
 
@@ -508,7 +794,8 @@ patients.read
 attachments.upload
 ```
 
-Finalidade: enviar anexos clínicos privados.
+Finalidade: enviar de um a dois anexos clínicos privados em multipart, no campo
+`files[]`. O tamanho máximo de cada arquivo vem da configuração do backend.
 
 ### `GET /api/v1/clinics/:clinicId/patients/:patientId/medical-record/entries/:entryId/attachments/:attachmentId/download`
 
@@ -519,9 +806,12 @@ patients.read
 attachments.read
 ```
 
-Finalidade: baixar um anexo clínico privado.
+Finalidade: baixar um anexo clínico privado. Não existe URL pública de arquivo.
 
-O acesso exige finalidade válida e gera registro de auditoria.
+O acesso exige `purposeCode`, aceita `purposeNote` e gera registro de auditoria.
+A resposta usa `Cache-Control: private, no-store`, `X-Content-Type-Options: nosniff`
+e `Content-Disposition: attachment`; tipos não reconhecidos são entregues como
+`application/octet-stream`.
 
 Parâmetros adicionais:
 

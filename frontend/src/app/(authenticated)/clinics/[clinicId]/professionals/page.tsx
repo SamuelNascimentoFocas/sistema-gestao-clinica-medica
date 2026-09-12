@@ -1,7 +1,5 @@
-import { notFound } from "next/navigation";
 import { ClinicProfessionalsManager } from "@/components/professionals/clinic-professionals-manager";
 import { requireClinicPermissions } from "@/lib/server/clinic-authorization";
-import { getClinicProfessionals } from "@/lib/server/clinic-professionals";
 import { hasAnyPermission } from "@/lib/auth/permissions";
 import { getClinicMembers } from "@/lib/server/clinic-members";
 import type { ProfessionalUserOption } from "@/types/professional";
@@ -36,24 +34,16 @@ export default async function ProfessionalsPage({
     ["professionals.update"],
   );
 
-  const initialProfessionals =
-    await getClinicProfessionals(clinicId);
-
-  if (!initialProfessionals) {
-    notFound();
-  }
-
-  let doctorOptions: ProfessionalUserOption[] = [];
+  let professionalUserOptions: ProfessionalUserOption[] = [];
 
   if (canCreate) {
     const members = await getClinicMembers(clinicId);
 
-    doctorOptions = (members ?? [])
+    professionalUserOptions = (members ?? [])
       .filter(
         (membership) =>
           membership.isActive &&
           membership.role.isActive &&
-          membership.role.code === "doctor" &&
           membership.user.isActive &&
           !membership.user.isGlobalAdmin,
       )
@@ -80,10 +70,9 @@ export default async function ProfessionalsPage({
 
       <ClinicProfessionalsManager
         clinicId={clinicId}
-        initialProfessionals={initialProfessionals}
         canCreate={canCreate}
         canUpdate={canUpdate}
-        doctorOptions={doctorOptions}
+        professionalUserOptions={professionalUserOptions}
       />
     </div>
   );

@@ -1,61 +1,14 @@
+import { ClinicProfessionalFactory } from '#database/factories/clinic_professional_factory'
+import { ProfessionalFactory } from '#database/factories/professional_factory'
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createBearerToken as createToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
 import Clinic from '#models/clinic'
-import Role from '#models/role'
 import Professional from '#models/professional'
-import ClinicProfessional from '#models/clinic_professional'
-import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-type RoleCode = 'clinic_admin' | 'receptionist' | 'doctor'
-
-async function createUser(email: string) {
-  return User.create({
-    fullName: 'Usuário da Agenda',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin: false,
-    isActive: true,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    timezone: 'America/Sao_Paulo',
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: RoleCode
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive: true,
-  })
-}
 
 async function createProfessional({
   fullName,
@@ -66,16 +19,7 @@ async function createProfessional({
   crmNumber: string
   userId?: string | null
 }) {
-  return Professional.create({
-    userId,
-    fullName,
-    crmNumber,
-    crmState: 'MG',
-    specialty: 'Clínica Médica',
-    phone: null,
-    email: null,
-    isActive: true,
-  })
+  return ProfessionalFactory.merge({ userId, fullName, crmNumber }).create()
 }
 
 async function createClinicProfessional({
@@ -87,19 +31,11 @@ async function createClinicProfessional({
   professional: Professional
   isActive?: boolean
 }) {
-  return ClinicProfessional.create({
+  return ClinicProfessionalFactory.merge({
     clinicId: clinic.id,
     professionalId: professional.id,
-    localCode: null,
-    defaultAppointmentDurationMinutes: 30,
-    acceptsAppointments: true,
     isActive,
-  })
-}
-
-async function createToken(user: User) {
-  const token = await User.accessTokens.create(user)
-  return token.value!.release()
+  }).create()
 }
 
 test.group('Professional schedules API', (group) => {
@@ -113,7 +49,10 @@ test.group('Professional schedules API', (group) => {
   })
 
   test('requires authentication and allows schedule reading', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Leitura')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Leitura',
+    }).create()
 
     const professional = await createProfessional({
       fullName: 'Dr. Agenda Pública',
@@ -131,7 +70,10 @@ test.group('Professional schedules API', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const receptionist = await createUser('schedule.receptionist@example.com')
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário da Agenda',
+      email: 'schedule.receptionist@example.com',
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -172,7 +114,10 @@ test.group('Professional schedules API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica Administrada')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Administrada',
+    }).create()
 
     const professional = await createProfessional({
       fullName: 'Dra. Agenda Administrada',
@@ -184,7 +129,10 @@ test.group('Professional schedules API', (group) => {
       professional,
     })
 
-    const clinicAdmin = await createUser('schedule.admin@example.com')
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário da Agenda',
+      email: 'schedule.admin@example.com',
+    }).create()
 
     await createMembership({
       user: clinicAdmin,
@@ -330,11 +278,20 @@ test.group('Professional schedules API', (group) => {
     client,
     assert,
   }) => {
-    const clinic = await createClinic('Clínica Médica')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica Médica',
+    }).create()
 
-    const firstDoctorUser = await createUser('first.schedule.doctor@example.com')
+    const firstDoctorUser = await UserFactory.merge({
+      fullName: 'Usuário da Agenda',
+      email: 'first.schedule.doctor@example.com',
+    }).create()
 
-    const secondDoctorUser = await createUser('second.schedule.doctor@example.com')
+    const secondDoctorUser = await UserFactory.merge({
+      fullName: 'Usuário da Agenda',
+      email: 'second.schedule.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: firstDoctorUser,
@@ -409,7 +366,10 @@ test.group('Professional schedules API', (group) => {
   test('validates time order and scopes schedule items to their professional', async ({
     client,
   }) => {
-    const clinic = await createClinic('Clínica de Validação')
+    const clinic = await ClinicFactory.merge({
+      timezone: 'America/Sao_Paulo',
+      name: 'Clínica de Validação',
+    }).create()
 
     const firstProfessional = await createProfessional({
       fullName: 'Dr. Primeiro Horário',
@@ -431,7 +391,10 @@ test.group('Professional schedules API', (group) => {
       professional: secondProfessional,
     })
 
-    const clinicAdmin = await createUser('schedule.validation.admin@example.com')
+    const clinicAdmin = await UserFactory.merge({
+      fullName: 'Usuário da Agenda',
+      email: 'schedule.validation.admin@example.com',
+    }).create()
 
     await createMembership({
       user: clinicAdmin,

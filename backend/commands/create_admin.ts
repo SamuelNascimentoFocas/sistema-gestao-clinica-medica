@@ -92,7 +92,7 @@ export default class CreateAdmin extends BaseCommand {
       return
     }
 
-    const user = await User.create({
+    await User.create({
       fullName,
       email,
       emailNormalized,
@@ -101,6 +101,6 @@ export default class CreateAdmin extends BaseCommand {
       isActive: true,
     })
 
-    this.logger.info(`Administrador geral criado com sucesso: ${user.email}`)
+    this.logger.info('Administrador geral criado com sucesso')
   }
 }

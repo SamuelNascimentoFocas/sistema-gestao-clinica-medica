@@ -5,6 +5,7 @@ import {
   readBackendResponse,
 } from '@/lib/server/backend-api'
 import { setSessionCookie } from '@/lib/server/auth-session'
+import { logServerError } from '@/lib/server/server-logging'
 import type {
   BackendLoginResponse,
   LoginRequest,
@@ -113,7 +114,7 @@ export async function POST(request: Request) {
 
     return response
   } catch (error) {
-    console.error('Falha na comunicação com o backend durante o login', error)
+    logServerError('auth.login_backend_request_failed', error)
 
     return NextResponse.json(
       {

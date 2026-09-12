@@ -1,9 +1,21 @@
 "use client";
 
+import { useForm, useWatch } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  FormEvent,
-  useState,
-} from "react";
+  medicalRecordEntryFormSchema,
+  type MedicalRecordEntryFormValues,
+} from "@/lib/forms/form-schemas";
+import { FormFieldError } from "@/components/ui/form-field-error";
+
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,23 +26,18 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import {
-  MEDICAL_RECORD_ENTRY_TYPE_OPTIONS,
-  type MedicalRecordEntryType,
-} from "@/types/medical-record";
+import { MEDICAL_RECORD_ENTRY_TYPE_OPTIONS } from "@/types/medical-record";
 
 type MedicalRecordEntryFormProps = {
   clinicId: string;
   patientId: string;
+  appointmentId?: string | null;
+  onClearAppointmentContext?: () => void;
   onCreated: () => Promise<void>;
 };
 
-async function readResponseMessage(
-  response: Response,
-) {
-  const body: unknown = await response
-    .json()
-    .catch(() => null);
+async function readResponseMessage(response: BrowserResponse) {
+  const body: unknown = await readBrowserJson(response).catch(() => null);
 
   if (
     typeof body === "object" &&
@@ -47,72 +54,52 @@ async function readResponseMessage(
 export function MedicalRecordEntryForm({
   clinicId,
   patientId,
+  appointmentId = null,
+  onClearAppointmentContext,
   onCreated,
 }: MedicalRecordEntryFormProps) {
   const router = useRouter();
 
-  const [entryTypeCode, setEntryTypeCode] =
-    useState<MedicalRecordEntryType>(
-      "consultation",
-    );
+  const {
+    register,
+    resetField,
+    control,
+    handleSubmit: submitForm,
+    formState: { errors, isSubmitting },
+  } = useForm<MedicalRecordEntryFormValues>({
+    resolver: zodResolver(medicalRecordEntryFormSchema),
+    defaultValues: { entryTypeCode: "consultation", content: "" },
+  });
+  const [content] = useWatch({ control, name: ["content"] });
 
-  const [content, setContent] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [errorMessage, setErrorMessage] =
-    useState<string | null>(null);
-
-  const [successMessage, setSuccessMessage] =
-    useState<string | null>(null);
-
-  async function handleSubmit(
-    event: FormEvent<HTMLFormElement>,
-  ) {
-    event.preventDefault();
-
+  async function handleSubmit({
+    entryTypeCode,
+    content,
+  }: MedicalRecordEntryFormValues) {
     const normalizedContent = content.trim();
 
-    if (!normalizedContent) {
-      setErrorMessage(
-        "Informe o conteúdo da entrada clínica.",
-      );
-
-      return;
-    }
-
-    if (normalizedContent.length > 20_000) {
-      setErrorMessage(
-        "O conteúdo deve possuir no máximo 20.000 caracteres.",
-      );
-
-      return;
-    }
-
-    setIsSubmitting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
-        )}/patients/${encodeURIComponent(
-          patientId,
-        )}/medical-record/entries`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            appointmentId: null,
-            entryTypeCode,
-            content: normalizedContent,
-          }),
+        )}/patients/${encodeURIComponent(patientId)}/medical-record/entries`,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          appointmentId,
+          entryTypeCode,
+          content: normalizedContent,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -121,78 +108,67 @@ export function MedicalRecordEntryForm({
         return;
       }
 
-      if (!response.ok) {
-        setErrorMessage(
-          await readResponseMessage(response),
-        );
+      if (!isSuccessfulResponse(response)) {
+        setErrorMessage(await readResponseMessage(response));
 
         return;
       }
 
-      setContent("");
+      resetField("content", { defaultValue: "" });
 
       await onCreated();
 
-      setSuccessMessage(
-        "Entrada clínica registrada com sucesso.",
-      );
+      setSuccessMessage("Entrada clínica registrada com sucesso.");
     } catch {
-      setErrorMessage(
-        "Não foi possível comunicar com o servidor.",
-      );
-    } finally {
-      setIsSubmitting(false);
+      setErrorMessage("Não foi possível comunicar com o servidor.");
     }
   }
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          Nova entrada clínica
-        </CardTitle>
+        <CardTitle>Nova entrada clínica</CardTitle>
 
         <CardDescription>
-          Registre uma consulta, evolução ou outra
-          informação clínica relevante.
+          Registre uma consulta, evolução ou outra informação clínica relevante.
+          {appointmentId
+            ? " Esta entrada será vinculada à consulta concluída selecionada."
+            : ""}
         </CardDescription>
       </CardHeader>
 
       <CardContent>
-        <form
-          className="space-y-5"
-          onSubmit={handleSubmit}
-        >
+        <form className="space-y-5" onSubmit={submitForm(handleSubmit)}>
           <div className="space-y-2">
-            <Label htmlFor="medical-record-entry-type">
-              Tipo da entrada
-            </Label>
+            <Label htmlFor="medical-record-entry-type">Tipo da entrada</Label>
 
             <select
+              {...register("entryTypeCode", {
+                onChange: () => {
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                },
+              })}
+              aria-invalid={!!errors.entryTypeCode}
+              aria-describedby={
+                errors.entryTypeCode
+                  ? "medical-record-entry-type-error"
+                  : undefined
+              }
               id="medical-record-entry-type"
-              value={entryTypeCode}
               disabled={isSubmitting}
               className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onChange={(event) => {
-                setEntryTypeCode(
-                  event.target
-                    .value as MedicalRecordEntryType,
-                );
-                setErrorMessage(null);
-                setSuccessMessage(null);
-              }}
             >
-              {MEDICAL_RECORD_ENTRY_TYPE_OPTIONS.map(
-                (option) => (
-                  <option
-                    key={option.value}
-                    value={option.value}
-                  >
-                    {option.label}
-                  </option>
-                ),
-              )}
+              {MEDICAL_RECORD_ENTRY_TYPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
+            <FormFieldError
+              id={"medical-record-entry-type-error"}
+              message={errors.entryTypeCode?.message}
+            />
           </div>
 
           <div className="space-y-2">
@@ -201,56 +177,71 @@ export function MedicalRecordEntryForm({
             </Label>
 
             <textarea
+              {...register("content", {
+                onChange: () => {
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                },
+              })}
+              aria-invalid={!!errors.content}
+              aria-describedby={
+                errors.content
+                  ? "medical-record-entry-content-error"
+                  : undefined
+              }
               id="medical-record-entry-content"
-              value={content}
               required
               maxLength={20_000}
               disabled={isSubmitting}
               rows={8}
               className="border-input bg-background min-h-40 w-full rounded-md border px-3 py-2 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="Descreva as informações clínicas relevantes."
-              onChange={(event) => {
-                setContent(event.target.value);
-                setErrorMessage(null);
-                setSuccessMessage(null);
-              }}
+            />
+            <FormFieldError
+              id={"medical-record-entry-content-error"}
+              message={errors.content?.message}
             />
 
             <p className="text-xs text-muted-foreground">
               {content.length.toLocaleString("pt-BR")}
               /20.000 caracteres
             </p>
+
+            <p className="text-xs text-muted-foreground">
+              Formatação Markdown: use # para títulos, **texto** para negrito,
+              *texto* para itálico e - ou 1. para listas. HTML, links e imagens
+              não são renderizados.
+            </p>
           </div>
 
           {errorMessage ? (
-            <p
-              className="text-sm text-destructive"
-              role="alert"
-            >
+            <p className="text-sm text-destructive" role="alert">
               {errorMessage}
             </p>
           ) : null}
 
           {successMessage ? (
-            <p
-              className="text-sm text-green-700"
-              role="status"
-            >
+            <p className="text-sm text-green-700" role="status">
               {successMessage}
             </p>
           ) : null}
 
-          <Button
-            type="submit"
-            disabled={
-              isSubmitting ||
-              !content.trim()
-            }
-          >
-            {isSubmitting
-              ? "Registrando..."
-              : "Registrar entrada"}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="submit" disabled={isSubmitting || !content.trim()}>
+              {isSubmitting ? "Registrando..." : "Registrar entrada"}
+            </Button>
+
+            {appointmentId && onClearAppointmentContext ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSubmitting}
+                onClick={onClearAppointmentContext}
+              >
+                Remover vínculo com a consulta
+              </Button>
+            ) : null}
+          </div>
         </form>
       </CardContent>
     </Card>

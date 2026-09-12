@@ -1,35 +1,47 @@
 import type { AuthUser } from "@/types/auth";
+import type { PaginationMeta } from "@/types/pagination";
 
-export const CLINIC_MEMBER_ROLES = [
-  {
-    code: "clinic_admin",
-    label: "Administrador de Consultório",
-  },
-  {
-    code: "receptionist",
-    label: "Recepcionista",
-  },
-  {
-    code: "doctor",
-    label: "Médico",
-  },
-] as const;
+export type InvitationStatus =
+  | "not_invited"
+  | "accepted"
+  | "revoked"
+  | "expired"
+  | "sent"
+  | "pending_dispatch";
 
-export type ClinicMemberRoleCode =
-  (typeof CLINIC_MEMBER_ROLES)[number]["code"];
+export type ClinicMemberUser = AuthUser & {
+  passwordConfigured: boolean;
+  invitationStatus: InvitationStatus;
+  invitationSentAt: string | null;
+  invitationExpiresAt: string | null;
+};
 
-export type ClinicMemberRole = {
+export type ClinicRolePermission = {
   id: string;
-  code: ClinicMemberRoleCode;
+  code: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ClinicRoleSummary = {
+  id: string;
+  code: string;
   name: string;
   description: string | null;
+  clinicId: string | null;
   isSystem: boolean;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
 };
 
-export type ClinicMember = {
+export type ClinicRole = ClinicRoleSummary & {
+  permissions: ClinicRolePermission[];
+};
+
+type ClinicMemberWithUser<TUser extends AuthUser> = {
   id: string;
   userId: string;
   clinicId: string;
@@ -37,20 +49,30 @@ export type ClinicMember = {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
-  user: AuthUser;
-  role: ClinicMemberRole;
+  user: TUser;
+  role: ClinicRoleSummary;
 };
+
+export type ClinicMember = ClinicMemberWithUser<ClinicMemberUser>;
+export type ClinicMemberMutation = ClinicMemberWithUser<AuthUser>;
 
 export type ClinicMembersResponse = {
   data: ClinicMember[];
+  meta: PaginationMeta;
 };
 
 export type ClinicMemberResponse = {
-  membership: ClinicMember;
+  membership: ClinicMemberMutation;
 };
 
-export function isClinicMemberRoleCode(
-  value: unknown,
-): value is ClinicMemberRoleCode {
-  return CLINIC_MEMBER_ROLES.some((role) => role.code === value);
-}
+export type ClinicRolesResponse = {
+  data: ClinicRole[];
+};
+
+export type ClinicRoleResponse = {
+  role: ClinicRole;
+};
+
+export type ClinicRolePermissionsResponse = {
+  data: ClinicRolePermission[];
+};

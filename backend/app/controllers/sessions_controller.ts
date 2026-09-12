@@ -8,7 +8,14 @@ export default class SessionsController {
     const { email, password } = await request.validateUsing(loginValidator)
 
     const normalizedEmail = email.toLowerCase()
-    const user = await User.verifyCredentials(normalizedEmail, password)
+    const passwordlessUser = await User.query()
+      .where('email_normalized', normalizedEmail)
+      .whereNull('password_hash')
+      .first()
+    const user = await User.verifyCredentials(
+      passwordlessUser ? `password-not-configured:${passwordlessUser.id}` : normalizedEmail,
+      password
+    )
 
     if (!user.isActive) {
       return response.forbidden({

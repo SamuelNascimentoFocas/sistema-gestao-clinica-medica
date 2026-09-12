@@ -1,5 +1,12 @@
 "use client";
 
+import {
+  browserApi,
+  isSuccessfulResponse,
+  readBrowserJson,
+  type BrowserResponse,
+} from "@/lib/client/browser-api";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -58,10 +65,9 @@ function formatDateTime(
 }
 
 async function readResponseMessage(
-  response: Response,
+  response: BrowserResponse,
 ) {
-  const body: unknown = await response
-    .json()
+  const body: unknown = await readBrowserJson(response)
     .catch(() => null);
 
   if (
@@ -112,30 +118,28 @@ export function MedicalRecordAttachmentsPanel({
     }
 
     try {
-      const response = await fetch(
-        `/api/clinics/${encodeURIComponent(
+      const response = await browserApi.request<string>({
+        url: `/api/clinics/${encodeURIComponent(
           clinicId,
         )}/patients/${encodeURIComponent(
           patientId,
         )}/medical-record/entries/${encodeURIComponent(
           entryId,
         )}/attachments/access`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            purposeCode:
-              accessValues.purposeCode,
-            purposeNote:
-              accessValues.purposeNote.trim() ||
-              null,
-            page,
-            perPage: 10,
-          }),
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
         },
-      );
+        data: JSON.stringify({
+          purposeCode:
+            accessValues.purposeCode,
+          purposeNote:
+            accessValues.purposeNote.trim() ||
+            null,
+          page,
+          perPage: 10,
+        }),
+      });
 
       if (response.status === 401) {
         router.replace("/login");
@@ -144,7 +148,7 @@ export function MedicalRecordAttachmentsPanel({
         return;
       }
 
-      if (!response.ok) {
+      if (!isSuccessfulResponse(response)) {
         setErrorMessage(
           await readResponseMessage(response),
         );
@@ -153,7 +157,7 @@ export function MedicalRecordAttachmentsPanel({
       }
 
       const body =
-        (await response.json()) as MedicalRecordAttachmentsResponse;
+        (await readBrowserJson(response)) as MedicalRecordAttachmentsResponse;
 
       setAttachmentsResponse(body);
     } catch {

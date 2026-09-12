@@ -1,15 +1,14 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import User from '#models/user'
 import Clinic from '#models/clinic'
-import Role from '#models/role'
 import UserClinicRole from '#models/user_clinic_role'
 import {
   createClinicMembershipValidator,
   listClinicMembershipsValidator,
-  updateClinicMembershipStatusValidator,
   updateClinicMembershipValidator,
 } from '#validators/clinic_membership'
 import { isLastActiveClinicAdmin } from '#services/clinic_membership_rules'
+import { resolveRoleForAssignment } from '#services/role_grant_service'
 
 async function loadRelations(membership: UserClinicRole) {
   await membership.load('user')
@@ -42,12 +41,8 @@ export default class ClinicMembershipsController {
       query.where('is_active', filters.isActive)
     }
 
-    const roleCode = filters.roleCode
-
-    if (roleCode) {
-      query.whereHas('role', (roleQuery) => {
-        roleQuery.where('code', roleCode)
-      })
+    if (filters.roleId) {
+      query.where('role_id', filters.roleId)
     }
 
     const memberships = await query.paginate(page, perPage)
@@ -58,7 +53,7 @@ export default class ClinicMembershipsController {
     })
   }
 
-  async store({ request, response }: HttpContext) {
+  async store({ auth, request, response }: HttpContext) {
     const payload = await request.validateUsing(createClinicMembershipValidator)
 
     const user = await User.find(payload.userId)
@@ -95,19 +90,14 @@ export default class ClinicMembershipsController {
       })
     }
 
-    const role = await Role.findBy('code', payload.roleCode)
-
-    if (!role) {
-      return response.notFound({
-        message: 'Perfil não encontrado',
-      })
-    }
-
-    if (!role.isActive) {
-      return response.conflict({
-        message: 'Não é possível atribuir um perfil inativo',
-      })
-    }
+    const role = await resolveRoleForAssignment({
+      clinicId: clinic.id,
+      roleId: payload.roleId,
+      actor: {
+        isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
+        permissionCodes: ['*'],
+      },
+    })
 
     const existingMembership = await UserClinicRole.query()
       .where('user_id', user.id)
@@ -153,7 +143,7 @@ export default class ClinicMembershipsController {
     })
   }
 
-  async update({ params, request, response }: HttpContext) {
+  async update({ auth, params, request, response }: HttpContext) {
     const membership = await UserClinicRole.query().where('id', params.id).preload('role').first()
 
     if (!membership) {
@@ -162,21 +152,15 @@ export default class ClinicMembershipsController {
       })
     }
 
-    const { roleCode } = await request.validateUsing(updateClinicMembershipValidator)
-
-    const role = await Role.findBy('code', roleCode)
-
-    if (!role) {
-      return response.notFound({
-        message: 'Perfil não encontrado',
-      })
-    }
-
-    if (!role.isActive) {
-      return response.conflict({
-        message: 'Não é possível atribuir um perfil inativo',
-      })
-    }
+    const payload = await request.validateUsing(updateClinicMembershipValidator)
+    const role = await resolveRoleForAssignment({
+      clinicId: membership.clinicId,
+      roleId: payload.roleId,
+      actor: {
+        isGlobalAdmin: auth.getUserOrFail().isGlobalAdmin,
+        permissionCodes: ['*'],
+      },
+    })
 
     if (
       role.code !== 'clinic_admin' &&
@@ -191,67 +175,6 @@ export default class ClinicMembershipsController {
     membership.roleId = role.id
     await membership.save()
     await loadRelations(membership)
-
-    return response.ok({
-      membership: membership.serialize(),
-    })
-  }
-
-  async updateStatus({ params, request, response }: HttpContext) {
-    const membership = await UserClinicRole.query()
-      .where('id', params.id)
-      .preload('user')
-      .preload('clinic')
-      .preload('role')
-      .first()
-
-    if (!membership) {
-      return response.notFound({
-        message: 'Vínculo não encontrado',
-      })
-    }
-
-    const { isActive } = await request.validateUsing(updateClinicMembershipStatusValidator)
-
-    if (
-      !isActive &&
-      membership.isActive &&
-      membership.role.code === 'clinic_admin' &&
-      (await isLastActiveClinicAdmin(membership))
-    ) {
-      return response.conflict({
-        message: 'O último Administrador de Consultório ativo não pode ser inativado',
-      })
-    }
-
-    if (isActive) {
-      if (membership.user.isGlobalAdmin) {
-        return response.conflict({
-          message: 'O Administrador Geral não necessita de vínculo com consultório',
-        })
-      }
-
-      if (!membership.user.isActive) {
-        return response.conflict({
-          message: 'Não é possível ativar o vínculo de um usuário inativo',
-        })
-      }
-
-      if (!membership.clinic.isActive) {
-        return response.conflict({
-          message: 'Não é possível ativar o vínculo com um consultório inativo',
-        })
-      }
-
-      if (!membership.role.isActive) {
-        return response.conflict({
-          message: 'Não é possível ativar um vínculo com perfil inativo',
-        })
-      }
-    }
-
-    membership.isActive = isActive
-    await membership.save()
 
     return response.ok({
       membership: membership.serialize(),

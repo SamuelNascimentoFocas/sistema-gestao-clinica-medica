@@ -10,22 +10,31 @@ export const listUsersValidator = vine.compile(
   })
 )
 
-export const createUserValidator = vine.compile(
-  vine.object({
-    fullName: vine.string().trim().minLength(3).maxLength(180),
-    email: vine.string().trim().email().maxLength(254),
-    password: vine.string().minLength(12).maxLength(72),
-  })
-)
-
 export const updateUserValidator = vine.compile(
-  vine.object({
-    fullName: vine.string().trim().minLength(3).maxLength(180).optional(),
-
-    email: vine.string().trim().email().maxLength(254).optional(),
-
-    password: vine.string().minLength(12).maxLength(72).optional(),
-  })
+  vine
+    .object({
+      fullName: vine.string().trim().minLength(3).maxLength(180).optional(),
+      email: vine.string().trim().email().maxLength(254).optional(),
+    })
+    .merge(
+      vine
+        .group([
+          vine.group.if(
+            (data) =>
+              data.password === undefined &&
+              data.passwordConfirmation === undefined &&
+              data.passwordHash === undefined,
+            {}
+          ),
+        ])
+        .otherwise((_, field) => {
+          field.report(
+            'Administrative password fields are not accepted by this endpoint',
+            'forbidden',
+            field
+          )
+        })
+    )
 )
 
 export const updateUserStatusValidator = vine.compile(

@@ -36,6 +36,13 @@ test.group('Command admin:create', (group) => {
 
     command.assertSucceeded()
 
+    const logMessages = command.logger.getLogs().map((log) => log.message)
+
+    assert.isTrue(
+      logMessages.some((message) => message.endsWith('Administrador geral criado com sucesso'))
+    )
+    assert.isFalse(logMessages.some((message) => message.includes(email)))
+
     const user = await User.query().where('email_normalized', email).firstOrFail()
 
     assert.equal(user.fullName, 'Administrador da Clínica')
@@ -45,7 +52,7 @@ test.group('Command admin:create', (group) => {
     assert.isTrue(user.isActive)
     assert.notEqual(user.passwordHash, plainPassword)
 
-    const passwordIsValid = await hash.use('bcrypt').verify(user.passwordHash, plainPassword)
+    const passwordIsValid = await hash.use('bcrypt').verify(user.passwordHash!, plainPassword)
 
     assert.isTrue(passwordIsValid)
   })

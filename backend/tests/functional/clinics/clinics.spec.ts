@@ -1,31 +1,7 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { createBearerToken } from '#tests/helpers/auth'
 import { test } from '@japa/runner'
 import testUtils from '@adonisjs/core/services/test_utils'
-import User from '#models/user'
-
-async function createUser({
-  email,
-  isGlobalAdmin,
-  isActive = true,
-}: {
-  email: string
-  isGlobalAdmin: boolean
-  isActive?: boolean
-}) {
-  return User.create({
-    fullName: 'Usuário Teste',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin,
-    isActive,
-  })
-}
-
-async function createBearerToken(user: User) {
-  const token = await User.accessTokens.create(user)
-
-  return token.value!.release()
-}
 
 test.group('Clinics', (group) => {
   group.each.setup(() => testUtils.db().withGlobalTransaction())
@@ -37,10 +13,11 @@ test.group('Clinics', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const regularUser = await createUser({
+    const regularUser = await UserFactory.merge({
+      fullName: 'Usuário Teste',
       email: 'regular@example.com',
       isGlobalAdmin: false,
-    })
+    }).create()
 
     const regularToken = await createBearerToken(regularUser)
 
@@ -54,11 +31,9 @@ test.group('Clinics', (group) => {
       message: 'Acesso restrito ao Administrador Geral',
     })
 
-    const inactiveAdmin = await createUser({
-      email: 'inactive.admin@example.com',
-      isGlobalAdmin: true,
-      isActive: false,
-    })
+    const inactiveAdmin = await UserFactory.apply('globalAdmin', 'inactive')
+      .merge({ fullName: 'Usuário Teste', email: 'inactive.admin@example.com' })
+      .create()
 
     const inactiveToken = await createBearerToken(inactiveAdmin)
 
@@ -74,10 +49,9 @@ test.group('Clinics', (group) => {
   })
 
   test('allows a global administrator to manage clinics', async ({ client, assert }) => {
-    const admin = await createUser({
-      email: 'global.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'global.admin@example.com' })
+      .create()
 
     const token = await createBearerToken(admin)
 
@@ -155,10 +129,9 @@ test.group('Clinics', (group) => {
   })
 
   test('validates clinic data and rejects duplicate CNPJ', async ({ client }) => {
-    const admin = await createUser({
-      email: 'validation.admin@example.com',
-      isGlobalAdmin: true,
-    })
+    const admin = await UserFactory.apply('globalAdmin')
+      .merge({ fullName: 'Usuário Teste', email: 'validation.admin@example.com' })
+      .create()
 
     const token = await createBearerToken(admin)
 

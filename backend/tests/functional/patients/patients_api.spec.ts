@@ -1,64 +1,13 @@
+import { UserFactory } from '#database/factories/user_factory'
+import { ClinicFactory } from '#database/factories/clinic_factory'
+import { createBearerToken as createToken } from '#tests/helpers/auth'
+import { createMembership } from '#tests/helpers/membership'
 import { test } from '@japa/runner'
-import User from '#models/user'
-import Clinic from '#models/clinic'
-import Role from '#models/role'
 import Patient from '#models/patient'
 import PatientClinic from '#models/patient_clinic'
 import MedicalRecord from '#models/medical_record'
-import UserClinicRole from '#models/user_clinic_role'
 import { truncateClinicSchemaTables } from '../../helpers/database.js'
 import { seedAuthorizationCatalog } from '../../../database/seeders/authorization_catalog_seeder.js'
-
-async function createUser(email: string) {
-  return User.create({
-    fullName: 'Usuário de Pacientes',
-    email,
-    emailNormalized: email.toLowerCase(),
-    passwordHash: 'TestPassword!123',
-    isGlobalAdmin: false,
-    isActive: true,
-  })
-}
-
-async function createClinic(name: string) {
-  return Clinic.create({
-    name,
-    cnpj: null,
-    phone: null,
-    addressStreet: null,
-    addressNumber: null,
-    addressComplement: null,
-    addressNeighborhood: null,
-    addressCity: null,
-    addressState: null,
-    addressPostalCode: null,
-    isActive: true,
-  })
-}
-
-async function createMembership({
-  user,
-  clinic,
-  roleCode,
-}: {
-  user: User
-  clinic: Clinic
-  roleCode: 'receptionist' | 'doctor'
-}) {
-  const role = await Role.findByOrFail('code', roleCode)
-
-  return UserClinicRole.create({
-    userId: user.id,
-    clinicId: clinic.id,
-    roleId: role.id,
-    isActive: true,
-  })
-}
-
-async function createToken(user: User) {
-  const token = await User.accessTokens.create(user)
-  return token.value!.release()
-}
 
 test.group('Patients API', (group) => {
   group.each.setup(async () => {
@@ -71,7 +20,7 @@ test.group('Patients API', (group) => {
   })
 
   test('requires authentication and clinic permissions', async ({ client }) => {
-    const clinic = await createClinic('Clínica Protegida')
+    const clinic = await ClinicFactory.merge({ name: 'Clínica Protegida' }).create()
 
     const unauthenticatedResponse = await client
       .get(`/api/v1/clinics/${clinic.id}/patients`)
@@ -79,7 +28,10 @@ test.group('Patients API', (group) => {
 
     unauthenticatedResponse.assertStatus(401)
 
-    const doctor = await createUser('patient.doctor@example.com')
+    const doctor = await UserFactory.merge({
+      fullName: 'Usuário de Pacientes',
+      email: 'patient.doctor@example.com',
+    }).create()
 
     await createMembership({
       user: doctor,
@@ -112,9 +64,12 @@ test.group('Patients API', (group) => {
     client,
     assert,
   }) => {
-    const firstClinic = await createClinic('Primeira Clínica')
-    const secondClinic = await createClinic('Segunda Clínica')
-    const receptionist = await createUser('patient.receptionist@example.com')
+    const firstClinic = await ClinicFactory.merge({ name: 'Primeira Clínica' }).create()
+    const secondClinic = await ClinicFactory.merge({ name: 'Segunda Clínica' }).create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Pacientes',
+      email: 'patient.receptionist@example.com',
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -195,8 +150,11 @@ test.group('Patients API', (group) => {
   })
 
   test('updates patient data and the local clinic link status', async ({ client, assert }) => {
-    const clinic = await createClinic('Clínica de Atualização')
-    const receptionist = await createUser('patient.update@example.com')
+    const clinic = await ClinicFactory.merge({ name: 'Clínica de Atualização' }).create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Pacientes',
+      email: 'patient.update@example.com',
+    }).create()
 
     await createMembership({
       user: receptionist,
@@ -254,9 +212,12 @@ test.group('Patients API', (group) => {
   })
 
   test('rejects duplicate links, conflicting identity and invalid data', async ({ client }) => {
-    const firstClinic = await createClinic('Clínica de Validação 1')
-    const secondClinic = await createClinic('Clínica de Validação 2')
-    const receptionist = await createUser('patient.validation@example.com')
+    const firstClinic = await ClinicFactory.merge({ name: 'Clínica de Validação 1' }).create()
+    const secondClinic = await ClinicFactory.merge({ name: 'Clínica de Validação 2' }).create()
+    const receptionist = await UserFactory.merge({
+      fullName: 'Usuário de Pacientes',
+      email: 'patient.validation@example.com',
+    }).create()
 
     await createMembership({
       user: receptionist,

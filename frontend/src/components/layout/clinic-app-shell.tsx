@@ -2,24 +2,36 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import {
   Building2,
   CalendarDays,
   Clock,
   FileText,
   LayoutDashboard,
-  Menu,
   Settings,
   ShieldCheck,
   Stethoscope,
   Users,
-  X,
   type LucideIcon,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+  useSidebar,
+} from "@/components/ui/sidebar";
 import { hasAnyPermission } from "@/lib/auth/permissions";
-import { cn } from "@/lib/utils";
 
 type ClinicAppShellProps = {
   children: ReactNode;
@@ -27,6 +39,7 @@ type ClinicAppShellProps = {
   clinicName: string;
   accessLabel: string;
   permissions: string[];
+  clinicSwitcher?: ReactNode;
 };
 
 type NavigationItem = {
@@ -36,158 +49,193 @@ type NavigationItem = {
   permissions: string[];
 };
 
-export function ClinicAppShell({
+type NavigationSection = {
+  label: string;
+  items: NavigationItem[];
+};
+
+function ClinicShellContent({
   children,
   clinicId,
   clinicName,
   accessLabel,
   permissions,
+  clinicSwitcher,
 }: ClinicAppShellProps) {
   const pathname = usePathname();
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
+  const { setOpenMobile } = useSidebar();
   const basePath = `/clinics/${clinicId}`;
 
-  const navigationItems: NavigationItem[] = [
+  const navigationSections: NavigationSection[] = [
     {
-      label: "Painel",
-      href: `${basePath}/dashboard`,
-      icon: LayoutDashboard,
-      permissions: [],
-    },
-    {
-      label: "Agendamentos",
-      href: `${basePath}/appointments`,
-      icon: CalendarDays,
-      permissions: ["appointments.read"],
-    },
-    {
-      label: "Pacientes",
-      href: `${basePath}/patients`,
-      icon: Users,
-      permissions: ["patients.read"],
-    },
-    {
-      label: "Profissionais",
-      href: `${basePath}/professionals`,
-      icon: Stethoscope,
-      permissions: ["professionals.read"],
-    },
-    {
-      label: "Agendas",
-      href: `${basePath}/schedules`,
-      icon: Clock,
-      permissions: ["schedules.read"],
-    },
-    {
-      label: "Prontuários",
-      href: `${basePath}/medical-records`,
-      icon: FileText,
-      permissions: ["medical_records.read"],
-    },
-    {
-      label: "Administração",
-      href: `${basePath}/administration`,
-      icon: Settings,
-      permissions: [
-        "clinics.update",
-        "users.read",
-        "users.create",
-        "users.update",
-        "users.assign_role",
-        "professionals.create",
-        "professionals.update",
+      label: "Visão geral",
+      items: [
+        {
+          label: "Painel",
+          href: `${basePath}/dashboard`,
+          icon: LayoutDashboard,
+          permissions: [],
+        },
       ],
     },
     {
-      label: "Auditoria",
-      href: `${basePath}/audit-logs`,
-      icon: ShieldCheck,
-      permissions: ["audit_logs.read"],
+      label: "Atendimento",
+      items: [
+        {
+          label: "Agendamentos",
+          href: `${basePath}/appointments`,
+          icon: CalendarDays,
+          permissions: ["appointments.read"],
+        },
+        {
+          label: "Pacientes",
+          href: `${basePath}/patients`,
+          icon: Users,
+          permissions: ["patients.read"],
+        },
+        {
+          label: "Profissionais",
+          href: `${basePath}/professionals`,
+          icon: Stethoscope,
+          permissions: ["professionals.read"],
+        },
+        {
+          label: "Agendas",
+          href: `${basePath}/schedules`,
+          icon: Clock,
+          permissions: ["schedules.read"],
+        },
+        {
+          label: "Prontuários",
+          href: `${basePath}/medical-records`,
+          icon: FileText,
+          permissions: ["medical_records.read"],
+        },
+      ],
     },
-  ].filter((item) =>
-    hasAnyPermission(permissions, item.permissions),
-  );
-
-  function renderNavigation() {
-    return navigationItems.map((item) => {
-      const Icon = item.icon;
-      const isActive =
-        pathname === item.href || pathname.startsWith(`${item.href}/`);
-
-      return (
-        <Link
-          key={item.href}
-          href={item.href}
-          aria-current={isActive ? "page" : undefined}
-          onClick={() => setIsMobileMenuOpen(false)}
-          className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
-            isActive
-              ? "bg-primary text-primary-foreground"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground",
-          )}
-        >
-          <Icon className="size-4 shrink-0" aria-hidden="true" />
-          <span>{item.label}</span>
-        </Link>
-      );
-    });
-  }
+    {
+      label: "Gestão",
+      items: [
+        {
+          label: "Administração",
+          href: `${basePath}/administration`,
+          icon: Settings,
+          permissions: [
+            "clinics.update",
+            "users.read",
+            "users.create",
+            "users.update",
+            "users.assign_role",
+            "roles.manage",
+            "professionals.create",
+            "professionals.update",
+          ],
+        },
+        {
+          label: "Auditoria",
+          href: `${basePath}/audit-logs`,
+          icon: ShieldCheck,
+          permissions: ["audit_logs.read"],
+        },
+      ],
+    },
+  ]
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) =>
+        hasAnyPermission(permissions, item.permissions),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
-    <div className="flex min-h-[calc(100vh-4rem)] bg-muted/30">
-      <aside className="hidden w-72 shrink-0 flex-col border-r bg-background lg:flex">
-        <div className="border-b px-5 py-5">
-          <div className="flex items-start gap-3">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <Building2 className="size-5" aria-hidden="true" />
+    <>
+      <Sidebar
+        collapsible="icon"
+        style={{
+          top: "4rem",
+          height: "calc(100svh - 4rem)",
+        }}
+      >
+        <SidebarHeader className="border-b border-sidebar-border">
+          {clinicSwitcher ?? (
+            <div className="flex h-12 items-center gap-2 overflow-hidden rounded-md p-2 group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:p-0">
+              <span className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <Building2 className="size-4" aria-hidden="true" />
+              </span>
+              <span className="min-w-0 flex-1 leading-tight group-data-[collapsible=icon]:hidden">
+                <span className="block truncate text-sm font-medium">
+                  {clinicName}
+                </span>
+                <span className="block truncate text-xs text-sidebar-foreground/70">
+                  {accessLabel}
+                </span>
+              </span>
             </div>
+          )}
+        </SidebarHeader>
 
-            <div className="min-w-0">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Clínica atual
-              </p>
-              <p className="mt-1 truncate font-semibold">{clinicName}</p>
-              <p className="mt-1 truncate text-xs text-muted-foreground">
-                {accessLabel}
-              </p>
-            </div>
-          </div>
-        </div>
+        <SidebarContent>
+          {navigationSections.map((section) => (
+            <SidebarGroup key={section.label}>
+              <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {section.items.map((item) => {
+                    const Icon = item.icon;
+                    const isActive =
+                      pathname === item.href ||
+                      pathname.startsWith(`${item.href}/`);
 
-        <nav
-          aria-label="Navegação da clínica"
-          className="flex-1 space-y-1 overflow-y-auto p-3"
-        >
-          {renderNavigation()}
-        </nav>
+                    return (
+                      <SidebarMenuItem key={item.href}>
+                        <SidebarMenuButton
+                          render={
+                            <Link
+                              href={item.href}
+                              aria-current={isActive ? "page" : undefined}
+                              onClick={() => setOpenMobile(false)}
+                            />
+                          }
+                          isActive={isActive}
+                          tooltip={item.label}
+                        >
+                          <Icon aria-hidden="true" />
+                          <span>{item.label}</span>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          ))}
+        </SidebarContent>
 
-        <div className="border-t p-3">
-          <Link
-            href="/clinics"
-            className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <Building2 className="size-4" aria-hidden="true" />
-            Trocar clínica
-          </Link>
-        </div>
-      </aside>
+        <SidebarFooter className="border-t border-sidebar-border">
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                render={
+                  <Link
+                    href="/clinics"
+                    onClick={() => setOpenMobile(false)}
+                  />
+                }
+                tooltip="Trocar clínica"
+              >
+                <Building2 aria-hidden="true" />
+                <span>Trocar clínica</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarFooter>
+      </Sidebar>
 
-      <div className="min-w-0 flex-1">
-        <div className="sticky top-16 z-30 flex items-center border-b bg-background/95 px-4 py-3 backdrop-blur lg:hidden">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            aria-label="Abrir menu"
-            aria-expanded={isMobileMenuOpen}
-            onClick={() => setIsMobileMenuOpen(true)}
-          >
-            <Menu className="size-5" aria-hidden="true" />
-          </Button>
-
-          <div className="min-w-0 flex-1 px-3">
+      <SidebarInset>
+        <div className="sticky top-16 z-30 flex min-h-12 items-center gap-3 border-b bg-background/95 px-4 backdrop-blur">
+          <SidebarTrigger />
+          <div className="min-w-0">
             <p className="truncate text-sm font-semibold">{clinicName}</p>
             <p className="truncate text-xs text-muted-foreground">
               {accessLabel}
@@ -196,60 +244,15 @@ export function ClinicAppShell({
         </div>
 
         {children}
-      </div>
+      </SidebarInset>
+    </>
+  );
+}
 
-      {isMobileMenuOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button
-            type="button"
-            aria-label="Fechar menu"
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setIsMobileMenuOpen(false)}
-          />
-
-          <aside className="relative flex h-full w-[min(20rem,85vw)] flex-col bg-background shadow-xl">
-            <div className="flex items-start justify-between border-b p-4">
-              <div className="min-w-0">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Clínica atual
-                </p>
-                <p className="mt-1 truncate font-semibold">{clinicName}</p>
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {accessLabel}
-                </p>
-              </div>
-
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label="Fechar menu"
-                onClick={() => setIsMobileMenuOpen(false)}
-              >
-                <X className="size-5" aria-hidden="true" />
-              </Button>
-            </div>
-
-            <nav
-              aria-label="Navegação móvel da clínica"
-              className="flex-1 space-y-1 overflow-y-auto p-3"
-            >
-              {renderNavigation()}
-            </nav>
-
-            <div className="border-t p-3">
-              <Link
-                href="/clinics"
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Building2 className="size-4" aria-hidden="true" />
-                Trocar clínica
-              </Link>
-            </div>
-          </aside>
-        </div>
-      ) : null}
-    </div>
+export function ClinicAppShell(props: ClinicAppShellProps) {
+  return (
+    <SidebarProvider className="min-h-[calc(100vh-4rem)]">
+      <ClinicShellContent {...props} />
+    </SidebarProvider>
   );
 }
