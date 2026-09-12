@@ -33,6 +33,10 @@ Baseline granular do banco, ordem de dependências, guarda de linhagem, SQL espe
 
 Estratégia e checklist de validação técnica e funcional do backend, frontend, banco e Git.
 
+### [RASTREABILIDADE_FASE12.md](RASTREABILIDADE_FASE12.md)
+
+Mapa dos findings B1–B9, critérios de resolução, commits e evidências da revisão final da Fase 12.
+
 ### [CENARIO_DEMONSTRATIVO.md](CENARIO_DEMONSTRATIVO.md)
 
 Seeder opcional de demonstração, dados fictícios, credenciais locais e roteiro de apresentação.
